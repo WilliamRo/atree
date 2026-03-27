@@ -838,20 +838,32 @@ function draw() {
 
     // Labels
     const fontSize = Math.max(8, Math.min(13, 11 * zoom));
+    const drawLabel = (text, lx, ly, font, color) => {
+      ctx.save();
+      ctx.font = font;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      if (isFocused) {
+        const tw = ctx.measureText(text).width;
+        const pad = 4;
+        const bh = fontSize + pad * 2;
+        ctx.fillStyle = 'rgba(13, 17, 23, 0.82)';
+        const rx = lx - tw / 2 - pad, ry = ly - fontSize - pad, rw = tw + pad * 2;
+        ctx.beginPath();
+        ctx.roundRect(rx, ry, rw, bh, 3);
+        ctx.fill();
+      }
+      ctx.fillStyle = color;
+      ctx.fillText(text, lx, ly);
+      ctx.restore();
+    };
     if (node.depth === 0) {
-      ctx.save();
-      ctx.font = `bold ${fontSize + 2}px "Cascadia Code", "Fira Code", monospace`;
-      ctx.fillStyle = '#f0883e';
-      ctx.textAlign = 'center';
-      ctx.fillText(node.name, s.x, s.y + sr + fontSize + 4);
-      ctx.restore();
+      drawLabel(node.name, s.x, s.y + sr + fontSize + 4,
+        `bold ${fontSize + 2}px "Cascadia Code", "Fira Code", monospace`, '#f0883e');
     } else if (node.depth === 1 || zoom > 1.5) {
-      ctx.save();
-      ctx.font = `${fontSize}px "Cascadia Code", "Fira Code", monospace`;
-      ctx.fillStyle = node.isLeaf ? 'rgba(126, 231, 135, 0.8)' : 'rgba(201, 209, 217, 0.8)';
-      ctx.textAlign = 'center';
-      ctx.fillText(node.name, s.x, s.y - sr - 4);
-      ctx.restore();
+      drawLabel(node.name, s.x, s.y - sr - 4,
+        `${fontSize}px "Cascadia Code", "Fira Code", monospace`,
+        node.isLeaf ? 'rgba(126, 231, 135, 0.8)' : 'rgba(201, 209, 217, 0.8)');
     }
 
   });
