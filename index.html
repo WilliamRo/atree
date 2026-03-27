@@ -282,6 +282,7 @@
 <script>
 const STORAGE_KEY = 'hub-tree-data';
 const PINNED_KEY = 'hub-tree-pinned-collapsed';
+const FOCUS_KEY = 'hub-tree-focus';
 const SKIP = new Set(['.git', '.idea', '.agents', '.claude', '__pycache__', 'node_modules', '.pytest_cache']);
 
 const canvas = document.getElementById('c');
@@ -314,6 +315,12 @@ try {
 
 function savePinned() {
   localStorage.setItem(PINNED_KEY, JSON.stringify([...pinnedCollapsed]));
+}
+
+let focusedPath = localStorage.getItem(FOCUS_KEY) || null;
+function saveFocus() {
+  if (focusedPath) localStorage.setItem(FOCUS_KEY, focusedPath);
+  else localStorage.removeItem(FOCUS_KEY);
 }
 
 function resize() {
@@ -543,6 +550,24 @@ async function readMdFile(nodePath, filename) {
 function showCtxMenu(x, y, nodePath, mdFiles, isLeaf) {
   ctxMenu.innerHTML = '';
 
+  // Current focus toggle
+  const isFocused = focusedPath === nodePath;
+  const focusItem = document.createElement('div');
+  focusItem.className = 'ctx-item';
+  focusItem.textContent = (isFocused ? '✓ ' : '  ') + 'Current focus';
+  focusItem.addEventListener('click', () => {
+    ctxMenu.style.display = 'none';
+    focusedPath = isFocused ? null : nodePath;
+    saveFocus();
+    draw();
+  });
+  ctxMenu.appendChild(focusItem);
+  {
+    const sep = document.createElement('div');
+    sep.style.cssText = 'border-top: 1px solid #21262d; margin: 4px 0;';
+    ctxMenu.appendChild(sep);
+  }
+
   if (!isLeaf) {
     const isPinned = pinnedCollapsed.has(nodePath);
     const pinItem = document.createElement('div');
@@ -563,7 +588,10 @@ function showCtxMenu(x, y, nodePath, mdFiles, isLeaf) {
   }
 
   if (mdFiles.length === 0 && isLeaf) {
-    ctxMenu.innerHTML = '<div class="ctx-empty">No .md files</div>';
+    const empty = document.createElement('div');
+    empty.className = 'ctx-empty';
+    empty.textContent = 'No .md files';
+    ctxMenu.appendChild(empty);
   } else if (mdFiles.length === 0 && !isLeaf) {
     // no md files, pin item already added
   } else {
@@ -733,6 +761,19 @@ function draw() {
 
     // Check if this node has a ccmd
     const hasCcmd = findHasCcmd(node.path);
+    const isFocused = focusedPath === node.path;
+
+    // Focus glow (behind node)
+    if (isFocused) {
+      const glowR = sr * 4;
+      const glow = ctx.createRadialGradient(s.x, s.y, sr * 0.5, s.x, s.y, glowR);
+      glow.addColorStop(0, 'rgba(227, 179, 65, 0.45)');
+      glow.addColorStop(1, 'rgba(227, 179, 65, 0)');
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, glowR, 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+    }
 
     ctx.beginPath();
     ctx.arc(s.x, s.y, sr, 0, Math.PI * 2);
@@ -773,6 +814,15 @@ function draw() {
       ctx.arc(s.x + sr * 0.7, s.y - sr * 0.7, Math.max(2, sr * 0.25), 0, Math.PI * 2);
       ctx.fillStyle = '#f0883e';
       ctx.fill();
+    }
+
+    // Focus ring (on top of node)
+    if (isFocused) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, sr + Math.max(3, 4 * zoom), 0, Math.PI * 2);
+      ctx.strokeStyle = '#e3b341';
+      ctx.lineWidth = Math.max(1.5, 2 * zoom);
+      ctx.stroke();
     }
 
     // Collapsed indicator
