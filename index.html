@@ -283,6 +283,40 @@
 const STORAGE_KEY = 'hub-tree-data';
 const PINNED_KEY = 'hub-tree-pinned-collapsed';
 const FOCUS_KEY = 'hub-tree-focus';
+const DB_NAME = 'hub-tree-db';
+const DB_STORE = 'handles';
+const DB_HANDLE_KEY = 'dirHandle';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(DB_STORE);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+async function saveHandle(handle) {
+  try {
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(handle, DB_HANDLE_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = e => reject(e.target.error);
+    });
+  } catch (e) {}
+}
+async function loadHandle() {
+  try {
+    const db = await openDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readonly');
+      const req = tx.objectStore(DB_STORE).get(DB_HANDLE_KEY);
+      req.onsuccess = e => resolve(e.target.result || null);
+      req.onerror = e => reject(e.target.error);
+    });
+  } catch (e) { return null; }
+}
 const SKIP = new Set(['.git', '.idea', '.agents', '.claude', '__pycache__', 'node_modules', '.pytest_cache']);
 
 const canvas = document.getElementById('c');
@@ -477,6 +511,7 @@ async function scanDir(handle, maxDepth = 4, depth = 0) {
 async function pickAndScan() {
   try {
     dirHandle = await window.showDirectoryPicker();
+    await saveHandle(dirHandle);
     await scanAndRender();
   } catch (e) {
     if (e.name !== 'AbortError') console.error(e);
@@ -881,6 +916,17 @@ if (cached) {
     localStorage.removeItem(STORAGE_KEY);
   }
 }
+
+// --- Restore dirHandle from IndexedDB on load ---
+(async () => {
+  try {
+    const handle = await loadHandle();
+    if (!handle) return;
+    let perm = await handle.queryPermission({ mode: 'read' });
+    if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'read' });
+    if (perm === 'granted') dirHandle = handle;
+  } catch (e) {}
+})();
 
 // --- Folder picker button ---
 document.getElementById('pickBtn').addEventListener('click', pickAndScan);
