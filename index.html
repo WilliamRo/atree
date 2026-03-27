@@ -281,6 +281,7 @@
 </div>
 <script>
 const STORAGE_KEY = 'hub-tree-data';
+const PINNED_KEY = 'hub-tree-pinned-collapsed';
 const SKIP = new Set(['.git', '.idea', '.agents', '.claude', '__pycache__', 'node_modules', '.pytest_cache']);
 
 const canvas = document.getElementById('c');
@@ -304,6 +305,16 @@ let dragging = false, dragStartX, dragStartY, camStartX, camStartY;
 const nodes = [];
 const collapsed = new Set();
 const layerSpacing = 140;
+
+let pinnedCollapsed = new Set();
+try {
+  const _saved = localStorage.getItem(PINNED_KEY);
+  if (_saved) pinnedCollapsed = new Set(JSON.parse(_saved));
+} catch (e) {}
+
+function savePinned() {
+  localStorage.setItem(PINNED_KEY, JSON.stringify([...pinnedCollapsed]));
+}
 
 function resize() {
   W = canvas.width = window.innerWidth;
@@ -469,10 +480,11 @@ async function scanAndRender() {
   if (!dirHandle) return;
   showStatus('Scanning...');
   try {
+    const isFirstScan = !treeData;
     treeData = await scanDir(dirHandle);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(treeData));
     promptEl.style.display = 'none';
-    camX = 0; camY = 0; zoom = 1;
+    if (isFirstScan) { camX = 0; camY = 0; zoom = 1; }
     layout();
     draw();
     showStatus('Tree updated');
@@ -528,10 +540,32 @@ async function readMdFile(nodePath, filename) {
   } catch (e) { return null; }
 }
 
-function showCtxMenu(x, y, nodePath, mdFiles) {
+function showCtxMenu(x, y, nodePath, mdFiles, isLeaf) {
   ctxMenu.innerHTML = '';
-  if (mdFiles.length === 0) {
+
+  if (!isLeaf) {
+    const isPinned = pinnedCollapsed.has(nodePath);
+    const pinItem = document.createElement('div');
+    pinItem.className = 'ctx-item';
+    pinItem.textContent = (isPinned ? '✓ ' : '  ') + 'Collapse by default';
+    pinItem.addEventListener('click', () => {
+      ctxMenu.style.display = 'none';
+      if (isPinned) pinnedCollapsed.delete(nodePath);
+      else pinnedCollapsed.add(nodePath);
+      savePinned();
+    });
+    ctxMenu.appendChild(pinItem);
+    if (mdFiles.length > 0) {
+      const sep = document.createElement('div');
+      sep.style.cssText = 'border-top: 1px solid #21262d; margin: 4px 0;';
+      ctxMenu.appendChild(sep);
+    }
+  }
+
+  if (mdFiles.length === 0 && isLeaf) {
     ctxMenu.innerHTML = '<div class="ctx-empty">No .md files</div>';
+  } else if (mdFiles.length === 0 && !isLeaf) {
+    // no md files, pin item already added
   } else {
     mdFiles.forEach(f => {
       const item = document.createElement('div');
@@ -635,6 +669,10 @@ function layout() {
   }
 
   assignPositions(treeData, 1, 0, Math.PI * 2, 0, treeData.name);
+
+  nodes.forEach((n, i) => {
+    if (!n.isLeaf && pinnedCollapsed.has(n.path)) collapsed.add(i);
+  });
 }
 
 function isVisible(idx) {
@@ -901,7 +939,7 @@ canvas.addEventListener('contextmenu', async e => {
     const hitR = n.r + 4 / zoom;
     if (dx * dx + dy * dy < hitR * hitR) {
       const mdFiles = await listMdFiles(n.path);
-      showCtxMenu(e.clientX, e.clientY, n.path, mdFiles);
+      showCtxMenu(e.clientX, e.clientY, n.path, mdFiles, n.isLeaf);
       break;
     }
   }
