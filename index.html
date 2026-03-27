@@ -111,11 +111,11 @@
   #ccmd-panel {
     position: fixed;
     top: 0;
-    right: 0;
+    left: 0;
     width: 420px;
     height: 100vh;
     background: rgba(13, 17, 23, 0.96);
-    border-left: 1px solid #30363d;
+    border-right: 1px solid #30363d;
     z-index: 30;
     display: none;
     flex-direction: column;
@@ -123,7 +123,7 @@
   }
   #ccmd-drag {
     position: absolute;
-    left: -4px;
+    right: -4px;
     top: 0;
     width: 8px;
     height: 100%;
@@ -161,7 +161,16 @@
     color: #c9d1d9;
     font-size: 12px;
     line-height: 1.7;
+    scrollbar-width: thin;
+    scrollbar-color: #30363d transparent;
   }
+  #ccmd-body::-webkit-scrollbar { width: 6px; }
+  #ccmd-body::-webkit-scrollbar-track { background: transparent; }
+  #ccmd-body::-webkit-scrollbar-thumb {
+    background: #30363d;
+    border-radius: 3px;
+  }
+  #ccmd-body::-webkit-scrollbar-thumb:hover { background: #484f58; }
   #ccmd-body h1 { font-size: 16px; color: #f0883e; margin: 0 0 12px 0; }
   #ccmd-body h2 { font-size: 14px; color: #58a6ff; margin: 16px 0 8px 0; }
   #ccmd-body h3 { font-size: 13px; color: #58a6ff; margin: 12px 0 6px 0; }
@@ -199,7 +208,42 @@
     text-align: left;
   }
   #ccmd-body th { background: #161b22; color: #58a6ff; }
+  #ccmd-body blockquote {
+    border-left: 3px solid #30363d;
+    padding-left: 12px;
+    margin: 6px 0;
+    color: #6e7681;
+  }
   #ccmd-empty { color: #484f58; font-style: italic; }
+  #ctx-menu {
+    position: fixed;
+    background: rgba(13, 17, 23, 0.96);
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 4px 0;
+    z-index: 40;
+    display: none;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 12px;
+    min-width: 180px;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  #ctx-menu .ctx-item {
+    padding: 6px 14px;
+    color: #c9d1d9;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #ctx-menu .ctx-item:hover {
+    background: #21262d;
+    color: #58a6ff;
+  }
+  #ctx-menu .ctx-empty {
+    padding: 6px 14px;
+    color: #484f58;
+    font-style: italic;
+  }
 </style>
 </head>
 <body>
@@ -212,15 +256,21 @@
 <div id="status"></div>
 <div id="help">
   <div><span class="key">scroll</span>zoom</div>
-  <div><span class="key">drag</span>pan</div>
-  <div><span class="key">click</span>view CLAUDE.md</div>
-  <div><span class="key">right-click</span>expand / collapse node</div>
+  <div><span class="key">drag</span>pan canvas</div>
+  <div><span class="key">left-click</span>node → view CLAUDE.md</div>
+  <div><span class="key">middle-click</span>node → expand / collapse</div>
+  <div><span class="key">right-click</span>node → list .md files</div>
+  <div><span class="key">right-click</span>viewer → reload file</div>
   <div><span class="key">1-5</span>expand to level N</div>
-  <div><span class="key">r</span>rescan folder</div>
+  <div><span class="key">r</span>reload current file</div>
+  <div><span class="key">R</span>rescan folder</div>
+  <div><span class="key">H</span>viewer to left</div>
+  <div><span class="key">L</span>viewer to right</div>
   <div><span class="key">?</span>close this panel</div>
   <div class="storage" id="storageInfo"></div>
 </div>
 <div id="hint">press ? for shortcuts</div>
+<div id="ctx-menu"></div>
 <div id="ccmd-panel">
   <div id="ccmd-drag"></div>
   <div id="ccmd-header">
@@ -241,10 +291,14 @@ const statusEl = document.getElementById('status');
 const ccmdPanel = document.getElementById('ccmd-panel');
 const ccmdTitle = document.getElementById('ccmd-title');
 const ccmdBody = document.getElementById('ccmd-body');
+const ctxMenu = document.getElementById('ctx-menu');
 let W, H;
 
 let treeData = null;
 let dirHandle = null;
+let selectedNodePath = null;
+let selectedFileName = null;
+let panelSide = 'left';
 let camX = 0, camY = 0, zoom = 1;
 let dragging = false, dragStartX, dragStartY, camStartX, camStartY;
 const nodes = [];
@@ -287,6 +341,17 @@ function renderMarkdown(md) {
     // Empty line
     if (line.trim() === '') {
       if (inList) { html += '</ul>'; inList = false; }
+      continue;
+    }
+
+    // Blockquote
+    if (line.trimStart().startsWith('> ') || line.trim() === '>') {
+      if (inList) { html += '</ul>'; inList = false; }
+      const bqLines = [line.replace(/^\s*>\s?/, '')];
+      while (i + 1 < lines.length && (lines[i + 1].trimStart().startsWith('> ') || lines[i + 1].trim() === '>')) {
+        bqLines.push(lines[++i].replace(/^\s*>\s?/, ''));
+      }
+      html += '<blockquote>' + bqLines.map(l => l.trim() === '' ? '<br>' : inlineMd(l)).join('<br>') + '</blockquote>';
       continue;
     }
 
@@ -373,24 +438,21 @@ async function scanDir(handle, maxDepth = 4, depth = 0) {
   if (depth >= maxDepth) return node;
 
   const children = [];
-  let ccmdContent = null;
+  let hasCcmd = false;
 
   for await (const entry of handle.values()) {
     if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue;
     if (entry.kind === 'directory') {
       children.push(await scanDir(entry, maxDepth, depth + 1));
     } else if (entry.name === 'CLAUDE.md') {
-      try {
-        const file = await entry.getFile();
-        ccmdContent = await file.text();
-      } catch (e) {}
+      hasCcmd = true;
     }
   }
   if (children.length > 0) {
     children.sort((a, b) => a.name.localeCompare(b.name));
     node.children = children;
   }
-  if (ccmdContent) node.ccmd = ccmdContent;
+  if (hasCcmd) node.hasCcmd = true;
   return node;
 }
 
@@ -432,6 +494,82 @@ async function rescan() {
   await pickAndScan();
 }
 
+async function getDirHandle(nodePath) {
+  if (!dirHandle) return null;
+  const parts = nodePath.split('/');
+  let handle = dirHandle;
+  try {
+    for (let i = 1; i < parts.length; i++) {
+      handle = await handle.getDirectoryHandle(parts[i]);
+    }
+    return handle;
+  } catch (e) { return null; }
+}
+
+async function listMdFiles(nodePath) {
+  const handle = await getDirHandle(nodePath);
+  if (!handle) return [];
+  const files = [];
+  for await (const entry of handle.values()) {
+    if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+      files.push(entry.name);
+    }
+  }
+  return files.sort();
+}
+
+async function readMdFile(nodePath, filename) {
+  const handle = await getDirHandle(nodePath);
+  if (!handle) return null;
+  try {
+    const fileHandle = await handle.getFileHandle(filename);
+    const file = await fileHandle.getFile();
+    return await file.text();
+  } catch (e) { return null; }
+}
+
+function showCtxMenu(x, y, nodePath, mdFiles) {
+  ctxMenu.innerHTML = '';
+  if (mdFiles.length === 0) {
+    ctxMenu.innerHTML = '<div class="ctx-empty">No .md files</div>';
+  } else {
+    mdFiles.forEach(f => {
+      const item = document.createElement('div');
+      item.className = 'ctx-item';
+      item.textContent = f;
+      item.addEventListener('click', async () => {
+        ctxMenu.style.display = 'none';
+        const content = await readMdFile(nodePath, f);
+        if (content !== null) {
+          selectedNodePath = nodePath;
+          selectedFileName = f;
+          ccmdTitle.textContent = nodePath + '/' + f;
+          ccmdBody.innerHTML = renderMarkdown(content);
+          ccmdPanel.style.display = 'flex';
+        }
+      });
+      ctxMenu.appendChild(item);
+    });
+  }
+  // Position: keep menu within viewport
+  ctxMenu.style.display = 'block';
+  const rect = ctxMenu.getBoundingClientRect();
+  ctxMenu.style.left = Math.min(x, window.innerWidth - rect.width - 8) + 'px';
+  ctxMenu.style.top = Math.min(y, window.innerHeight - rect.height - 8) + 'px';
+}
+
+async function reloadCcmd() {
+  if (!dirHandle || !selectedNodePath || ccmdPanel.style.display === 'none') return;
+  const fname = selectedFileName || 'CLAUDE.md';
+  try {
+    const content = await readMdFile(selectedNodePath, fname);
+    if (content === null) return;
+    ccmdTitle.textContent = selectedNodePath + '/' + fname;
+    ccmdBody.innerHTML = renderMarkdown(content);
+    showStatus(fname + ' reloaded');
+  } catch (e) {}
+}
+
 function showStatus(msg) {
   statusEl.textContent = msg;
   statusEl.style.opacity = '1';
@@ -440,18 +578,17 @@ function showStatus(msg) {
 
 // --- Find ccmd for a node path ---
 
-function findCcmd(path) {
+function findHasCcmd(path) {
   const parts = path.split('/');
   let cur = treeData;
-  if (!cur) return null;
-  // Root
-  if (parts.length === 1) return cur.ccmd || null;
+  if (!cur) return false;
+  if (parts.length === 1) return !!cur.hasCcmd;
   for (let i = 1; i < parts.length; i++) {
-    if (!cur.children) return null;
+    if (!cur.children) return false;
     cur = cur.children.find(c => c.name === parts[i]);
-    if (!cur) return null;
+    if (!cur) return false;
   }
-  return cur.ccmd || null;
+  return !!cur.hasCcmd;
 }
 
 // --- Layout & drawing ---
@@ -557,7 +694,7 @@ function draw() {
     if (s.x < -50 || s.x > W + 50 || s.y < -50 || s.y > H + 50) return;
 
     // Check if this node has a ccmd
-    const hasCcmd = !!findCcmd(node.path);
+    const hasCcmd = findHasCcmd(node.path);
 
     ctx.beginPath();
     ctx.arc(s.x, s.y, sr, 0, Math.PI * 2);
@@ -701,7 +838,7 @@ canvas.addEventListener('mousemove', e => {
   }
 });
 
-canvas.addEventListener('mouseup', e => {
+canvas.addEventListener('mouseup', async e => {
   dragging = false;
   if (e.button !== 0) return; // left-click only
   const dx = e.clientX - clickStartX, dy = e.clientY - clickStartY;
@@ -713,10 +850,12 @@ canvas.addEventListener('mouseup', e => {
       const ddx = world.x - n.x, ddy = world.y - n.y;
       const hitR = n.r + 4 / zoom;
       if (ddx * ddx + ddy * ddy < hitR * hitR) {
-        const ccmd = findCcmd(n.path);
-        if (ccmd) {
+        selectedNodePath = n.path;
+        selectedFileName = 'CLAUDE.md';
+        const content = await readMdFile(n.path, 'CLAUDE.md');
+        if (content !== null) {
           ccmdTitle.textContent = n.path + '/CLAUDE.md';
-          ccmdBody.innerHTML = renderMarkdown(ccmd);
+          ccmdBody.innerHTML = renderMarkdown(content);
         } else {
           ccmdTitle.textContent = n.path;
           ccmdBody.innerHTML = '<div id="ccmd-empty">No CLAUDE.md found</div>';
@@ -729,8 +868,9 @@ canvas.addEventListener('mouseup', e => {
 });
 canvas.addEventListener('mouseleave', () => { dragging = false; tooltip.style.display = 'none'; });
 
-// --- Right-click: expand/collapse ---
-canvas.addEventListener('contextmenu', e => {
+// --- Middle-click: expand/collapse ---
+canvas.addEventListener('mousedown', e => {
+  if (e.button !== 1) return;
   e.preventDefault();
   const world = toWorld(e.clientX, e.clientY);
   for (let i = nodes.length - 1; i >= 0; i--) {
@@ -749,8 +889,39 @@ canvas.addEventListener('contextmenu', e => {
   }
 });
 
+// --- Right-click: context menu with .md files ---
+canvas.addEventListener('contextmenu', async e => {
+  e.preventDefault();
+  ctxMenu.style.display = 'none';
+  const world = toWorld(e.clientX, e.clientY);
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    if (!isVisible(i)) continue;
+    const dx = world.x - n.x, dy = world.y - n.y;
+    const hitR = n.r + 4 / zoom;
+    if (dx * dx + dy * dy < hitR * hitR) {
+      const mdFiles = await listMdFiles(n.path);
+      showCtxMenu(e.clientX, e.clientY, n.path, mdFiles);
+      break;
+    }
+  }
+});
+
 document.getElementById('ccmd-close').addEventListener('click', () => {
   ccmdPanel.style.display = 'none';
+  selectedNodePath = null;
+  selectedFileName = null;
+});
+
+// Dismiss context menu on click outside
+document.addEventListener('mousedown', e => {
+  if (!ctxMenu.contains(e.target)) ctxMenu.style.display = 'none';
+});
+
+// Right-click on md viewer to reload
+ccmdPanel.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  reloadCcmd();
 });
 
 // --- Ccmd panel resize drag ---
@@ -765,7 +936,9 @@ ccmdDrag.addEventListener('mousedown', e => {
 });
 document.addEventListener('mousemove', e => {
   if (!ccmdDragging) return;
-  const newWidth = Math.max(200, Math.min(window.innerWidth - 100, window.innerWidth - e.clientX));
+  const newWidth = panelSide === 'left'
+    ? Math.max(200, Math.min(window.innerWidth - 100, e.clientX))
+    : Math.max(200, Math.min(window.innerWidth - 100, window.innerWidth - e.clientX));
   ccmdPanel.style.width = newWidth + 'px';
 });
 document.addEventListener('mouseup', () => {
@@ -784,6 +957,9 @@ document.addEventListener('keydown', e => {
   // Close ccmd panel on Escape
   if (e.key === 'Escape') {
     ccmdPanel.style.display = 'none';
+    ctxMenu.style.display = 'none';
+    selectedNodePath = null;
+    selectedFileName = null;
     return;
   }
   if (e.key >= '1' && e.key <= '5') {
@@ -795,7 +971,34 @@ document.addEventListener('keydown', e => {
     draw();
     showStatus('Level ' + level);
   }
-  if (e.key === 'r') { rescan(); }
+  if (e.key === 'r') { reloadCcmd(); }
+  if (e.key === 'R') { rescan(); }
+  if (e.key === 'H' && ccmdPanel.style.display === 'flex') {
+    panelSide = 'left';
+    ccmdPanel.style.left = '0';
+    ccmdPanel.style.right = 'auto';
+    ccmdPanel.style.borderRight = '1px solid #30363d';
+    ccmdPanel.style.borderLeft = 'none';
+    ccmdDrag.style.right = '-4px';
+    ccmdDrag.style.left = 'auto';
+    helpPanel.style.left = 'auto';
+    helpPanel.style.right = '20px';
+    hintEl.style.left = 'auto';
+    hintEl.style.right = '16px';
+  }
+  if (e.key === 'L' && ccmdPanel.style.display === 'flex') {
+    panelSide = 'right';
+    ccmdPanel.style.right = '0';
+    ccmdPanel.style.left = 'auto';
+    ccmdPanel.style.borderLeft = '1px solid #30363d';
+    ccmdPanel.style.borderRight = 'none';
+    ccmdDrag.style.left = '-4px';
+    ccmdDrag.style.right = 'auto';
+    helpPanel.style.right = 'auto';
+    helpPanel.style.left = '20px';
+    hintEl.style.right = 'auto';
+    hintEl.style.left = '16px';
+  }
   if (e.key === '?') {
     const show = helpPanel.style.display === 'none' || !helpPanel.style.display;
     if (show) {
