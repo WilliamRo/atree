@@ -1357,10 +1357,8 @@ function highlightMatch(text, query) {
   return text.slice(0, idx) + '<span class="cmd-hl">' + text.slice(idx, idx + query.length) + '</span>' + text.slice(idx + query.length);
 }
 
-function collectCcmdNodes() {
-  const result = [];
-  nodes.forEach(n => { if (findHasCcmd(n.path)) result.push(n); });
-  return result;
+function collectSearchableNodes() {
+  return nodes;
 }
 
 async function updateDropdown() {
@@ -1375,7 +1373,7 @@ async function updateDropdown() {
   const childFilter = browseMode ? rawQuery.slice(slashIdx + 1) : '';
   if (!parentTerm) { cmdDropdown.style.display = 'none'; dropdownItems = []; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
 
-  const ccmdNodes = collectCcmdNodes();
+  const ccmdNodes = collectSearchableNodes();
   const matchingNodes = ccmdNodes.filter(n => n.name.toLowerCase().includes(parentTerm));
   if (matchingNodes.length === 0) { cmdDropdown.style.display = 'none'; dropdownItems = []; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
 
@@ -1389,6 +1387,8 @@ async function updateDropdown() {
       });
       for (const c of children) {
         if (childFilter && !c.name.toLowerCase().includes(childFilter)) continue;
+        const cMdFiles = await listMdFiles(c.path);
+        if (cMdFiles.length === 0) continue;
         dropdownItems.push({ name: c.name, path: c.path, hlTerm: childFilter || parentTerm, isNode: true });
       }
     }
@@ -1521,7 +1521,8 @@ cmdInput.addEventListener('keydown', e => {
   if (e.key === 'Tab') {
     e.preventDefault();
     // Tab-complete from dropdown selection
-    if (dropdownItems.length > 0 && dropdownIdx >= 0) {
+    if (dropdownItems.length > 0) {
+      if (dropdownIdx < 0) dropdownIdx = 0;
       const f = dropdownItems[dropdownIdx];
       if (f.isNode) {
         cmdInput.value = 'find ' + f.name + '/';
@@ -1553,8 +1554,8 @@ cmdInput.addEventListener('keydown', e => {
   tabMatches = []; tabIdx = -1;
   if (e.key === 'Escape') { closeCmdBar(true); e.stopPropagation(); return; }
   if (e.key === 'Enter') {
-    if (dropdownItems.length > 0 && dropdownIdx >= 0) {
-      selectDropdownItem(dropdownIdx);
+    if (dropdownItems.length > 0) {
+      selectDropdownItem(dropdownIdx < 0 ? 0 : dropdownIdx);
       e.stopPropagation();
       return;
     }
