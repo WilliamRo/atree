@@ -107,6 +107,39 @@
     transition: background 0.15s;
   }
   #prompt button:hover { background: #30363d; }
+  #root-history {
+    margin-top: 20px;
+    text-align: left;
+    max-width: 360px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  #root-history .history-label {
+    color: #484f58;
+    font-size: 11px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #root-history .history-item {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  #root-history .history-item:hover { background: #30363d; }
+  #root-history .history-name {
+    color: #58a6ff;
+    font-size: 13px;
+  }
+  #root-history .history-ctx {
+    color: #484f58;
+    font-size: 11px;
+    margin-top: 2px;
+  }
   #cmd-bar {
     position: fixed;
     top: 16px;
@@ -332,8 +365,9 @@
 <canvas id="c"></canvas>
 <div id="tooltip"></div>
 <div id="prompt">
-  <div class="msg">Select a folder to visualize</div>
-  <button id="pickBtn">Open Folder</button>
+  <div class="msg">Select the root folder to visualize the tree of your<br><span style="color:orange">workspace</span> / <span style="color:#4a9eff">project</span> / <span style="color:#4ecf6a">knowledge base</span></div>
+  <button id="pickBtn">Select Root</button>
+  <div id="root-history"></div>
 </div>
 <div id="cmd-bar"><div id="cmd-wrap"><span id="cmd-shadow"></span><input id="cmd-input" type="text" /><div id="cmd-dropdown"></div></div></div>
 <div id="status"></div>
@@ -373,17 +407,27 @@
   <div id="ccmd-body"></div>
 </div>
 <script>
-const STORAGE_KEY = 'hub-tree-data';
-const PINNED_KEY = 'hub-tree-pinned-collapsed';
-const FOCUS_KEY = 'hub-tree-focus';
+const SESSION_ROOT_KEY = 'hub-tree-active-root';
+let activeRoot = sessionStorage.getItem(SESSION_ROOT_KEY) || '';
+function nsKey(base) { return activeRoot ? base + ':' + activeRoot : base; }
+function setActiveRoot(name) {
+  activeRoot = name;
+  sessionStorage.setItem(SESSION_ROOT_KEY, name);
+}
 const DB_NAME = 'hub-tree-db';
 const DB_STORE = 'handles';
-const DB_HANDLE_KEY = 'dirHandle';
+const DB_HISTORY_STORE = 'history';
+const DB_HISTORY_KEY = 'roots';
+const MAX_HISTORY = 5;
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = e => e.target.result.createObjectStore(DB_STORE);
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+      if (!db.objectStoreNames.contains(DB_HISTORY_STORE)) db.createObjectStore(DB_HISTORY_STORE);
+    };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror = e => reject(e.target.error);
   });
@@ -393,22 +437,93 @@ async function saveHandle(handle) {
     const db = await openDB();
     await new Promise((resolve, reject) => {
       const tx = db.transaction(DB_STORE, 'readwrite');
-      tx.objectStore(DB_STORE).put(handle, DB_HANDLE_KEY);
+      tx.objectStore(DB_STORE).put(handle, 'dirHandle:' + handle.name);
       tx.oncomplete = resolve;
       tx.onerror = e => reject(e.target.error);
     });
   } catch (e) {}
 }
-async function loadHandle() {
+async function loadHandle(name) {
   try {
     const db = await openDB();
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(DB_STORE, 'readonly');
-      const req = tx.objectStore(DB_STORE).get(DB_HANDLE_KEY);
+      const req = tx.objectStore(DB_STORE).get('dirHandle:' + name);
       req.onsuccess = e => resolve(e.target.result || null);
       req.onerror = e => reject(e.target.error);
     });
   } catch (e) { return null; }
+}
+
+async function getTopChildren(handle) {
+  const names = [];
+  try {
+    for await (const [name, entry] of handle.entries()) {
+      if (entry.kind === 'directory' && !name.startsWith('.')) names.push(name + '/');
+      if (names.length >= 5) break;
+    }
+  } catch (e) {}
+  names.sort();
+  return names.slice(0, 5).join(', ');
+}
+
+async function saveHistory(handle, context) {
+  try {
+    const db = await openDB();
+    const history = await loadHistory();
+    const existing = history.findIndex(h => h.name === handle.name);
+    if (existing >= 0) history.splice(existing, 1);
+    history.unshift({ handle, name: handle.name, context });
+    while (history.length > MAX_HISTORY) history.pop();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_HISTORY_STORE, 'readwrite');
+      tx.objectStore(DB_HISTORY_STORE).put(history, DB_HISTORY_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = e => reject(e.target.error);
+    });
+  } catch (e) {}
+}
+
+async function loadHistory() {
+  try {
+    const db = await openDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_HISTORY_STORE, 'readonly');
+      const req = tx.objectStore(DB_HISTORY_STORE).get(DB_HISTORY_KEY);
+      req.onsuccess = e => resolve(e.target.result || []);
+      req.onerror = e => reject(e.target.error);
+    });
+  } catch (e) { return []; }
+}
+
+async function renderHistory() {
+  const historyEl = document.getElementById('root-history');
+  const history = await loadHistory();
+  if (history.length === 0) { historyEl.innerHTML = ''; return; }
+  historyEl.innerHTML = '<div class="history-label">Recent</div>' +
+    history.map((h, i) => '<div class="history-item" data-idx="' + i + '">' +
+      '<div class="history-name">' + h.name + '</div>' +
+      '<div class="history-ctx">' + (h.context || '') + '</div></div>').join('');
+  historyEl.querySelectorAll('.history-item').forEach(el => {
+    el.addEventListener('click', async () => {
+      const idx = parseInt(el.dataset.idx);
+      const entry = history[idx];
+      if (!entry || !entry.handle) return;
+      try {
+        let perm = await entry.handle.queryPermission({ mode: 'read' });
+        if (perm !== 'granted') perm = await entry.handle.requestPermission({ mode: 'read' });
+        if (perm === 'granted') {
+          dirHandle = entry.handle;
+          setActiveRoot(dirHandle.name);
+          await saveHandle(dirHandle);
+          const ctx = await getTopChildren(dirHandle);
+          await saveHistory(dirHandle, ctx);
+          await scanAndRender();
+          await restoreRootState();
+        }
+      } catch (e) { showStatus('Cannot access folder'); }
+    });
+  });
 }
 const SKIP = new Set(['.git', '.idea', '.agents', '.claude', '__pycache__', 'node_modules', '.pytest_cache']);
 
@@ -430,9 +545,8 @@ let selectedFileName = null;
 let ccmdFontSize = 12;
 let panelSide = 'left';
 
-const MDV_KEY = 'hub-tree-mdv';
 function saveMdv() {
-  localStorage.setItem(MDV_KEY, JSON.stringify({
+  localStorage.setItem(nsKey('hub-tree-mdv'), JSON.stringify({
     side: panelSide,
     width: parseInt(ccmdPanel.style.width) || 420,
     fontSize: ccmdFontSize,
@@ -440,26 +554,28 @@ function saveMdv() {
     viewFile: selectedFileName
   }));
 }
-(function loadMdv() {
+function loadMdv() {
   try {
-    const s = JSON.parse(localStorage.getItem(MDV_KEY));
+    const s = JSON.parse(localStorage.getItem(nsKey('hub-tree-mdv')));
     if (!s) return;
     if (s.fontSize) { ccmdFontSize = s.fontSize; ccmdPanel.style.fontSize = ccmdFontSize + 'px'; }
     if (s.width) ccmdPanel.style.width = s.width + 'px';
     if (s.side) panelSide = s.side;
   } catch (e) {}
-})();
-const JUMP_KEY = 'hub-tree-jumplist';
+}
+loadMdv();
 let jumpList = [];
 let jumpIdx = -1;
-(function loadJumpList() {
+function loadJumpList() {
   try {
-    const s = JSON.parse(localStorage.getItem(JUMP_KEY));
+    const s = JSON.parse(localStorage.getItem(nsKey('hub-tree-jumplist')));
     if (s) { jumpList = s.list || []; jumpIdx = s.idx ?? -1; }
-  } catch (e) {}
-})();
+    else { jumpList = []; jumpIdx = -1; }
+  } catch (e) { jumpList = []; jumpIdx = -1; }
+}
+loadJumpList();
 function saveJumpList() {
-  localStorage.setItem(JUMP_KEY, JSON.stringify({ list: jumpList, idx: jumpIdx }));
+  localStorage.setItem(nsKey('hub-tree-jumplist'), JSON.stringify({ list: jumpList, idx: jumpIdx }));
 }
 function jumpPush(path, file) {
   if (jumpIdx >= 0 && jumpIdx < jumpList.length) {
@@ -484,36 +600,70 @@ async function jumpTo(entry) {
   draw();
 }
 
-const VIEW_KEY = 'hub-tree-view';
 let camX = 0, camY = 0, zoom = 1;
 function saveView() {
-  localStorage.setItem(VIEW_KEY, JSON.stringify({ camX, camY, zoom }));
+  localStorage.setItem(nsKey('hub-tree-view'), JSON.stringify({ camX, camY, zoom }));
 }
-(function loadView() {
+function loadView() {
   try {
-    const v = JSON.parse(localStorage.getItem(VIEW_KEY));
+    const v = JSON.parse(localStorage.getItem(nsKey('hub-tree-view')));
     if (v) { camX = v.camX; camY = v.camY; zoom = v.zoom; }
-  } catch (e) {}
-})();
+    else { camX = 0; camY = 0; zoom = 1; }
+  } catch (e) { camX = 0; camY = 0; zoom = 1; }
+}
+loadView();
 let dragging = false, dragStartX, dragStartY, camStartX, camStartY;
 const nodes = [];
 const collapsed = new Set();
 const layerSpacing = 140;
 
 let pinnedCollapsed = new Set();
-try {
-  const _saved = localStorage.getItem(PINNED_KEY);
-  if (_saved) pinnedCollapsed = new Set(JSON.parse(_saved));
-} catch (e) {}
+function loadPinned() {
+  try {
+    const _saved = localStorage.getItem(nsKey('hub-tree-pinned-collapsed'));
+    if (_saved) pinnedCollapsed = new Set(JSON.parse(_saved));
+    else pinnedCollapsed = new Set();
+  } catch (e) { pinnedCollapsed = new Set(); }
+}
+loadPinned();
 
 function savePinned() {
-  localStorage.setItem(PINNED_KEY, JSON.stringify([...pinnedCollapsed]));
+  localStorage.setItem(nsKey('hub-tree-pinned-collapsed'), JSON.stringify([...pinnedCollapsed]));
 }
 
-let focusedPath = localStorage.getItem(FOCUS_KEY) || null;
+let focusedPath = null;
+function loadFocus() {
+  focusedPath = localStorage.getItem(nsKey('hub-tree-focus')) || null;
+}
+loadFocus();
+
+async function restoreRootState() {
+  loadView();
+  loadPinned();
+  loadFocus();
+  loadJumpList();
+  loadMdv();
+  // Restore mdv panel content
+  selectedNodePath = null;
+  selectedFileName = null;
+  ccmdPanel.style.display = 'none';
+  try {
+    const s = JSON.parse(localStorage.getItem(nsKey('hub-tree-mdv')));
+    if (s && s.viewPath && s.viewFile) {
+      const content = await readMdFile(s.viewPath, s.viewFile);
+      if (content !== null) {
+        selectedNodePath = s.viewPath;
+        selectedFileName = s.viewFile;
+        ccmdTitle.textContent = s.viewPath + '/' + s.viewFile;
+        ccmdBody.innerHTML = renderMarkdown(content);
+        ccmdPanel.style.display = 'flex';
+      }
+    }
+  } catch (e) {}
+}
 function saveFocus() {
-  if (focusedPath) localStorage.setItem(FOCUS_KEY, focusedPath);
-  else localStorage.removeItem(FOCUS_KEY);
+  if (focusedPath) localStorage.setItem(nsKey('hub-tree-focus'), focusedPath);
+  else localStorage.removeItem(nsKey('hub-tree-focus'));
 }
 
 function resize() {
@@ -670,7 +820,10 @@ async function scanDir(handle, maxDepth = 7, depth = 0) {
 async function pickAndScan() {
   try {
     dirHandle = await window.showDirectoryPicker();
+    setActiveRoot(dirHandle.name);
     await saveHandle(dirHandle);
+    const ctx = await getTopChildren(dirHandle);
+    await saveHistory(dirHandle, ctx);
     await scanAndRender();
   } catch (e) {
     if (e.name !== 'AbortError') console.error(e);
@@ -683,7 +836,7 @@ async function scanAndRender() {
   try {
     const isFirstScan = !treeData;
     treeData = await scanDir(dirHandle);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(treeData));
+    localStorage.setItem(nsKey('hub-tree-data'), JSON.stringify(treeData));
     promptEl.style.display = 'none';
     if (isFirstScan) { camX = 0; camY = 0; zoom = 1; }
     layout();
@@ -1093,7 +1246,7 @@ function draw() {
 }
 
 // --- Init from cache ---
-const cached = localStorage.getItem(STORAGE_KEY);
+const cached = localStorage.getItem(nsKey('hub-tree-data'));
 if (cached) {
   try {
     treeData = JSON.parse(cached);
@@ -1101,14 +1254,15 @@ if (cached) {
     layout();
     draw();
   } catch (e) {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(nsKey('hub-tree-data'));
   }
 }
 
 // --- Restore dirHandle from IndexedDB on load ---
 (async () => {
+  if (!activeRoot) return;
   try {
-    const handle = await loadHandle();
+    const handle = await loadHandle(activeRoot);
     if (!handle) return;
     let perm = await handle.queryPermission({ mode: 'read' });
     if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'read' });
@@ -1116,7 +1270,7 @@ if (cached) {
       dirHandle = handle;
       // Restore mdv viewing state
       try {
-        const s = JSON.parse(localStorage.getItem(MDV_KEY));
+        const s = JSON.parse(localStorage.getItem(nsKey('hub-tree-mdv')));
         if (s && s.viewPath && s.viewFile) {
           const content = await readMdFile(s.viewPath, s.viewFile);
           if (content !== null) {
@@ -1131,6 +1285,9 @@ if (cached) {
     }
   } catch (e) {}
 })();
+
+// --- Render root history on selection page ---
+renderHistory();
 
 // --- Folder picker button ---
 document.getElementById('pickBtn').addEventListener('click', pickAndScan);
@@ -1335,7 +1492,7 @@ const cmdDropdown = document.getElementById('cmd-dropdown');
 let cmdBarOpen = false;
 let dropdownIdx = -1;
 let dropdownItems = [];
-const cmdList = ['find', 'help', 'manual', 'man'];
+const cmdList = ['clear', 'find', 'goto', 'help', 'manual', 'man', 'open'];
 
 function updateGhost() {
   const val = cmdInput.value.toLowerCase();
@@ -1361,10 +1518,48 @@ function collectSearchableNodes() {
   return nodes;
 }
 
+let gotoMode = false;
+
 async function updateDropdown() {
   const val = cmdInput.value.trim().toLowerCase();
-  const findMatch = val.match(/^find\s+(.+)/);
   const wrap = document.getElementById('cmd-wrap');
+
+  // --- goto mode ---
+  const gotoMatch = val.match(/^goto\s*(.*)/);
+  if (gotoMatch !== null) {
+    gotoMode = true;
+    const query = (gotoMatch[1] || '').toLowerCase();
+    const history = await loadHistory();
+    dropdownItems = history
+      .filter(h => !query || h.name.toLowerCase().includes(query) || (h.context || '').toLowerCase().includes(query))
+      .map(h => ({ name: h.name, context: h.context || '', handle: h.handle, hlTerm: query, isGoto: true }));
+    if (dropdownItems.length === 0) { cmdDropdown.style.display = 'none'; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
+    cmdDropdown.innerHTML = dropdownItems.map((h, i) => {
+      const nameHtml = h.hlTerm ? highlightMatch(h.name, h.hlTerm) : h.name;
+      const ctxHtml = h.hlTerm ? highlightMatch(h.context, h.hlTerm) : h.context;
+      return '<div class="cmd-item' + (i === dropdownIdx ? ' active' : '') + '" data-idx="' + i + '">' +
+        '<span class="cmd-name">' + nameHtml + '</span>' +
+        '<span class="cmd-path">' + ctxHtml + '</span></div>';
+    }).join('');
+    cmdDropdown.style.display = 'block';
+    wrap.classList.add('has-dropdown');
+    cmdDropdown.querySelectorAll('.cmd-item').forEach(el => {
+      el.addEventListener('mouseenter', () => {
+        dropdownIdx = parseInt(el.dataset.idx);
+        cmdDropdown.querySelectorAll('.cmd-item').forEach(x => x.classList.remove('active'));
+        el.classList.add('active');
+      });
+      el.addEventListener('mousedown', e => {
+        e.preventDefault();
+        selectDropdownItem(parseInt(el.dataset.idx));
+      });
+    });
+    return;
+  }
+  gotoMode = false;
+
+  // --- find mode ---
+  const findMatch = val.match(/^find\s+(.+)/);
   if (!findMatch) { cmdDropdown.style.display = 'none'; dropdownItems = []; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
   const rawQuery = findMatch[1].toLowerCase();
   const slashIdx = rawQuery.indexOf('/');
@@ -1433,6 +1628,23 @@ function scrollDropdownToActive() {
 async function selectDropdownItem(idx) {
   if (idx < 0 || idx >= dropdownItems.length) return;
   const f = dropdownItems[idx];
+  if (f.isGoto) {
+    closeCmdBar(false);
+    try {
+      let perm = await f.handle.queryPermission({ mode: 'read' });
+      if (perm !== 'granted') perm = await f.handle.requestPermission({ mode: 'read' });
+      if (perm === 'granted') {
+        dirHandle = f.handle;
+        setActiveRoot(dirHandle.name);
+        await saveHandle(dirHandle);
+        const ctx = await getTopChildren(dirHandle);
+        await saveHistory(dirHandle, ctx);
+        await scanAndRender();
+        await restoreRootState();
+      }
+    } catch (e) { showStatus('Cannot access folder'); }
+    return;
+  }
   closeCmdBar(false);
   const fileName = f.isNode ? 'CLAUDE.md' : f.name;
   const content = await readMdFile(f.path, fileName);
@@ -1525,12 +1737,12 @@ cmdInput.addEventListener('keydown', e => {
       if (dropdownIdx < 0) dropdownIdx = 0;
       const f = dropdownItems[dropdownIdx];
       if (f.isNode) {
-        cmdInput.value = 'find ' + f.name + '/';
+        cmdInput.value = 'find ' + f.name;
       } else {
         // Go to parent node's browse view
         const lastSlash = f.path.lastIndexOf('/');
         const nodeName = lastSlash >= 0 ? f.path.slice(lastSlash + 1) : f.path;
-        cmdInput.value = 'find ' + nodeName + '/';
+        cmdInput.value = 'find ' + nodeName;
       }
       dropdownIdx = -1;
       updateGhost();
@@ -1561,11 +1773,24 @@ cmdInput.addEventListener('keydown', e => {
     }
     const cmd = cmdInput.value.trim().toLowerCase();
     closeCmdBar(true);
-    if (cmd === 'manual' || cmd === 'man' || cmd === 'help') {
+    if (cmd === 'clear') {
+      localStorage.removeItem(nsKey('hub-tree-data'));
+      localStorage.removeItem(nsKey('hub-tree-focus'));
+      localStorage.removeItem(nsKey('hub-tree-mdv'));
+      localStorage.removeItem(nsKey('hub-tree-jumplist'));
+      localStorage.removeItem(nsKey('hub-tree-view'));
+      localStorage.removeItem(nsKey('hub-tree-pinned-collapsed'));
+      sessionStorage.removeItem(SESSION_ROOT_KEY);
+      location.reload();
+    } else if (cmd === 'manual' || cmd === 'man' || cmd === 'help') {
       helpPanel.style.display = helpPanel.style.display === 'block' ? 'none' : 'block';
       hintEl.style.display = helpPanel.style.display === 'block' ? 'none' : 'block';
-    } else if (cmd === 'find' || cmd === '') {
-      // "find" with no query or empty — do nothing
+    } else if (cmd === 'open') {
+      pickAndScan();
+    } else if (cmd === 'find' || cmd === '' || cmd === 'goto') {
+      // no query — do nothing
+    } else if (cmd.startsWith('goto ')) {
+      showStatus('No matching root');
     } else if (cmd.startsWith('find ')) {
       showStatus('No results');
     } else if (cmd) {
@@ -1628,7 +1853,7 @@ document.addEventListener('keydown', e => {
     } else {
       // Reopen with latest viewed file from storage
       try {
-        const s = JSON.parse(localStorage.getItem(MDV_KEY));
+        const s = JSON.parse(localStorage.getItem(nsKey('hub-tree-mdv')));
         if (!s || !s.viewPath || !s.viewFile) return;
         if (dirHandle) {
           (async () => {

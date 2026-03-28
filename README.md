@@ -21,15 +21,17 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 - Side panel Markdown viewer with resizing, font scaling, and left/right positioning
 - Command palette (`:`) with tab auto-completion, ghost text, and file finder
 - Find files by node name (`find hub`) or browse children (`find hub/`)
+- Multi-root support: open multiple roots in separate tabs, each with independent state
+- Root history (up to 5 recent roots) with quick switch via `goto` command
 - Jump list navigation (Ctrl+O / Ctrl+I) across viewed files
 - Vim-style navigation (h/j/k/l to pan, i/o to zoom)
 - Expand/collapse subtrees by depth level (1-7) or per-node (middle-click)
-- All view and panel settings persisted in localStorage across sessions
+- All view and panel settings persisted per-root in localStorage across sessions
 
 ## Usage
 
 1. Open `index.html` in a modern browser (Chrome/Edge recommended)
-2. Click **Open Folder** to select a project directory
+2. Click **Select Root** to select a project directory (or pick from recent history)
 3. Navigate the tree with mouse or keyboard; press `?` for the full shortcut list
 
 ## Shortcuts
@@ -72,3 +74,13 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 | f | Find (command bar with `find `) |
 | ? | Toggle shortcut help |
 | R | Rescan folder |
+
+### Commands
+
+| Command | Action |
+|---------|--------|
+| find \<query\> | Search nodes and .md files |
+| goto \<query\> | Switch to a different root from history |
+| open | Open a new root folder |
+| clear | Reset current root and return to selection |
+| help / man | Toggle shortcut help |
