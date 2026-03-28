@@ -55,6 +55,17 @@
     text-align: center;
     margin-right: 8px;
   }
+  #help .group {
+    color: #7ee787;
+    font-size: 11px;
+    margin-top: 8px;
+    padding-top: 8px;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-top: 1px solid #21262d;
+  }
+  #help .group:first-child { margin-top: 0; padding-top: 0; border-top: none; }
   #help .storage {
     margin-top: 10px;
     padding-top: 10px;
@@ -134,8 +145,39 @@
   }
   #cmd-shadow .typed { visibility: hidden; }
   #cmd-shadow .ghost { color: #484f58; }
+  #cmd-dropdown {
+    width: 100%;
+    max-height: 280px;
+    overflow-y: auto;
+    background: rgba(13, 17, 23, 0.96);
+    border: 1px solid #30363d;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    display: none;
+    scrollbar-width: thin;
+    scrollbar-color: #30363d transparent;
+  }
+  #cmd-dropdown::-webkit-scrollbar { width: 6px; }
+  #cmd-dropdown::-webkit-scrollbar-track { background: transparent; }
+  #cmd-dropdown::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  .cmd-item {
+    padding: 6px 16px;
+    cursor: pointer;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cmd-item:hover, .cmd-item.active {
+    background: #21262d;
+  }
+  .cmd-item .cmd-name { color: #c9d1d9; }
+  .cmd-item .cmd-path { color: #484f58; margin-left: 12px; font-size: 11px; }
+  .cmd-item .cmd-hl { color: #58a6ff; }
   #cmd-input::placeholder { color: #484f58; }
   #cmd-input:focus { border-color: #58a6ff; }
+  #cmd-wrap.has-dropdown #cmd-input { border-radius: 8px 8px 0 0; }
   #status {
     position: fixed;
     top: 50px;
@@ -293,27 +335,31 @@
   <div class="msg">Select a folder to visualize</div>
   <button id="pickBtn">Open Folder</button>
 </div>
-<div id="cmd-bar"><div id="cmd-wrap"><span id="cmd-shadow"></span><input id="cmd-input" type="text" placeholder="Enter command..." /></div></div>
+<div id="cmd-bar"><div id="cmd-wrap"><span id="cmd-shadow"></span><input id="cmd-input" type="text" /><div id="cmd-dropdown"></div></div></div>
 <div id="status"></div>
 <div id="help">
-  <div><span class="key">scroll</span>zoom</div>
+  <div class="group">Mouse</div>
   <div><span class="key">drag</span>pan canvas</div>
   <div><span class="key">left-click</span>node → view CLAUDE.md</div>
-  <div><span class="key">middle-click</span>node → expand / collapse</div>
   <div><span class="key">mid-dblclick</span>reset view</div>
+  <div><span class="key">middle-click</span>node → expand / collapse</div>
   <div><span class="key">right-click</span>node → list .md files</div>
   <div><span class="key">right-click</span>viewer → reload file</div>
-  <div><span class="key">d</span>toggle viewer</div>
+  <div><span class="key">scroll</span>zoom</div>
+  <div class="group">Navigation</div>
   <div><span class="key">1-7</span>expand to level N</div>
-  <div><span class="key">r</span>reload current file</div>
-  <div><span class="key">R</span>rescan folder</div>
-  <div><span class="key">+/-</span>viewer font size</div>
-  <div><span class="key">H</span>viewer to left</div>
-  <div><span class="key">L</span>viewer to right</div>
-  <div><span class="key">Ctrl+O</span>jump back</div>
-  <div><span class="key">Ctrl+I</span>jump forward</div>
+  <div><span class="key">h/j/k/l</span>move left / down / up / right</div>
+  <div><span class="key">i/o</span>zoom in / out</div>
+  <div class="group">Viewer</div>
+  <div><span class="key">+/-</span>font size</div>
+  <div><span class="key">Ctrl+O/I</span>jump back / forward</div>
+  <div><span class="key">H/L</span>move to left / right</div>
+  <div><span class="key">d</span>toggle viewer</div>
+  <div><span class="key">r</span>reload file</div>
+  <div class="group">Other</div>
   <div><span class="key">:</span>command bar</div>
   <div><span class="key">?</span>close this panel</div>
+  <div><span class="key">R</span>rescan folder</div>
   <div class="storage" id="storageInfo"></div>
 </div>
 <div id="hint">press ? for shortcuts</div>
@@ -1156,15 +1202,13 @@ canvas.addEventListener('mouseup', async e => {
       const ddx = world.x - n.x, ddy = world.y - n.y;
       const hitR = n.r + 4 / zoom;
       if (ddx * ddx + ddy * ddy < hitR * hitR) {
+        if (!findHasCcmd(n.path)) break;
         selectedNodePath = n.path;
         selectedFileName = 'CLAUDE.md';
         const content = await readMdFile(n.path, 'CLAUDE.md');
         if (content !== null) {
           ccmdTitle.textContent = n.path + '/CLAUDE.md';
           ccmdBody.innerHTML = renderMarkdown(content);
-        } else {
-          ccmdTitle.textContent = n.path;
-          ccmdBody.innerHTML = '<div id="ccmd-empty">No CLAUDE.md found</div>';
         }
         ccmdPanel.style.display = 'flex';
         jumpPush(n.path, 'CLAUDE.md');
@@ -1183,7 +1227,10 @@ canvas.addEventListener('mousedown', e => {
   e.preventDefault();
   const now = Date.now();
   if (now - lastMidClick < 350) {
-    camX = 0; camY = 0; zoom = 1;
+    zoom = 1;
+    const vc = getVisibleCenter();
+    camX = (vc.x - W / 2) / zoom;
+    camY = (vc.y - H / 2) / zoom;
     draw();
     saveView();
     showStatus('View reset');
@@ -1284,12 +1331,18 @@ if (panelSide === 'right') {
 const cmdBar = document.getElementById('cmd-bar');
 const cmdInput = document.getElementById('cmd-input');
 const cmdShadow = document.getElementById('cmd-shadow');
+const cmdDropdown = document.getElementById('cmd-dropdown');
 let cmdBarOpen = false;
-const cmdList = ['help', 'manual', 'man'];
+let dropdownIdx = -1;
+let dropdownItems = [];
+const cmdList = ['find', 'help', 'manual', 'man'];
 
 function updateGhost() {
   const val = cmdInput.value.toLowerCase();
-  if (!val) { cmdShadow.innerHTML = ''; return; }
+  if (!val) {
+    cmdShadow.innerHTML = '<span class="typed"></span><span class="ghost">find</span>';
+    return;
+  }
   const match = cmdList.find(c => c.startsWith(val) && c !== val);
   if (match) {
     cmdShadow.innerHTML = '<span class="typed">' + match.slice(0, val.length) + '</span><span class="ghost">' + match.slice(val.length) + '</span>';
@@ -1298,26 +1351,192 @@ function updateGhost() {
   }
 }
 
+function highlightMatch(text, query) {
+  const idx = text.toLowerCase().indexOf(query);
+  if (idx < 0) return text;
+  return text.slice(0, idx) + '<span class="cmd-hl">' + text.slice(idx, idx + query.length) + '</span>' + text.slice(idx + query.length);
+}
+
+function collectCcmdNodes() {
+  const result = [];
+  nodes.forEach(n => { if (findHasCcmd(n.path)) result.push(n); });
+  return result;
+}
+
+async function updateDropdown() {
+  const val = cmdInput.value.trim().toLowerCase();
+  const findMatch = val.match(/^find\s+(.+)/);
+  const wrap = document.getElementById('cmd-wrap');
+  if (!findMatch) { cmdDropdown.style.display = 'none'; dropdownItems = []; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
+  const rawQuery = findMatch[1].toLowerCase();
+  const slashIdx = rawQuery.indexOf('/');
+  const browseMode = slashIdx >= 0;
+  const parentTerm = browseMode ? rawQuery.slice(0, slashIdx) : rawQuery;
+  const childFilter = browseMode ? rawQuery.slice(slashIdx + 1) : '';
+  if (!parentTerm) { cmdDropdown.style.display = 'none'; dropdownItems = []; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
+
+  const ccmdNodes = collectCcmdNodes();
+  const matchingNodes = ccmdNodes.filter(n => n.name.toLowerCase().includes(parentTerm));
+  if (matchingNodes.length === 0) { cmdDropdown.style.display = 'none'; dropdownItems = []; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
+
+  dropdownItems = [];
+  if (browseMode) {
+    for (const n of matchingNodes) {
+      const children = ccmdNodes.filter(c => {
+        const parts = c.path.split('/');
+        parts.pop();
+        return parts.join('/') === n.path;
+      });
+      for (const c of children) {
+        if (childFilter && !c.name.toLowerCase().includes(childFilter)) continue;
+        dropdownItems.push({ name: c.name, path: c.path, hlTerm: childFilter || parentTerm, isNode: true });
+      }
+    }
+  } else {
+    for (const n of matchingNodes) {
+      const mdFiles = await listMdFiles(n.path);
+      const sorted = mdFiles.filter(f => f === 'CLAUDE.md').concat(mdFiles.filter(f => f !== 'CLAUDE.md'));
+      for (const f of sorted) {
+        dropdownItems.push({ name: f, path: n.path, hlTerm: parentTerm });
+      }
+    }
+  }
+  if (dropdownItems.length === 0) { cmdDropdown.style.display = 'none'; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
+  dropdownItems = dropdownItems.slice(0, 30);
+  cmdDropdown.innerHTML = dropdownItems.map((f, i) => {
+    const nameHtml = f.isNode ? highlightMatch(f.name, f.hlTerm) : f.name;
+    const pathHtml = f.isNode ? f.path : highlightMatch(f.path, f.hlTerm);
+    return '<div class="cmd-item' + (i === dropdownIdx ? ' active' : '') + '" data-idx="' + i + '">' +
+      '<span class="cmd-name">' + nameHtml + '</span>' +
+      '<span class="cmd-path">' + pathHtml + '</span></div>';
+  }).join('');
+  cmdDropdown.style.display = 'block';
+  wrap.classList.add('has-dropdown');
+  cmdDropdown.querySelectorAll('.cmd-item').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      dropdownIdx = parseInt(el.dataset.idx);
+      cmdDropdown.querySelectorAll('.cmd-item').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+    });
+    el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      selectDropdownItem(parseInt(el.dataset.idx));
+    });
+  });
+}
+
+function scrollDropdownToActive() {
+  const active = cmdDropdown.querySelector('.cmd-item.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+async function selectDropdownItem(idx) {
+  if (idx < 0 || idx >= dropdownItems.length) return;
+  const f = dropdownItems[idx];
+  closeCmdBar(false);
+  const fileName = f.isNode ? 'CLAUDE.md' : f.name;
+  const content = await readMdFile(f.path, fileName);
+  if (content !== null) {
+    selectedNodePath = f.path;
+    selectedFileName = fileName;
+    ccmdTitle.textContent = f.path + '/' + fileName;
+    ccmdBody.innerHTML = renderMarkdown(content);
+    ccmdPanel.style.display = 'flex';
+    jumpPush(f.path, fileName);
+    saveMdv();
+    centerOnNode(f.path);
+  }
+}
+
+function getVisibleCenter() {
+  const pw = ccmdPanel.style.display === 'flex' ? (parseInt(ccmdPanel.style.width) || 420) : 0;
+  let cx = W / 2;
+  if (pw > 0) {
+    cx = panelSide === 'left' ? pw + (W - pw) / 2 : (W - pw) / 2;
+  }
+  return { x: cx, y: H / 2 };
+}
+
+function centerOnNode(path) {
+  const n = nodes.find(nd => nd.path === path);
+  if (!n) return;
+  const vc = getVisibleCenter();
+  camX = (vc.x - W / 2) / zoom - n.x;
+  camY = (vc.y - H / 2) / zoom - n.y;
+  draw();
+  saveView();
+}
+
+let savedCam = null;
+
 function openCmdBar() {
+  savedCam = { camX, camY, zoom };
   cmdBar.style.display = 'block';
   cmdInput.value = '';
-  cmdShadow.innerHTML = '';
+  cmdShadow.innerHTML = '<span class="typed"></span><span class="ghost">find</span>';
+  cmdDropdown.style.display = 'none';
+  dropdownIdx = -1;
+  dropdownItems = [];
   cmdInput.focus();
   cmdBarOpen = true;
 }
-function closeCmdBar() {
+let closingCmdBar = false;
+function closeCmdBar(restoreView) {
+  if (closingCmdBar) return;
+  closingCmdBar = true;
   cmdBar.style.display = 'none';
   cmdShadow.innerHTML = '';
+  cmdDropdown.style.display = 'none';
+  dropdownIdx = -1;
+  dropdownItems = [];
+  document.getElementById('cmd-wrap').classList.remove('has-dropdown');
   cmdInput.blur();
   cmdBarOpen = false;
+  if (restoreView && savedCam) {
+    camX = savedCam.camX; camY = savedCam.camY; zoom = savedCam.zoom;
+    draw();
+    saveView();
+  }
+  savedCam = null;
+  closingCmdBar = false;
 }
-cmdInput.addEventListener('blur', () => { closeCmdBar(); });
-cmdInput.addEventListener('input', () => { updateGhost(); });
+cmdInput.addEventListener('blur', () => { closeCmdBar(true); });
+cmdInput.addEventListener('input', () => { updateGhost(); updateDropdown(); });
+
 let tabIdx = -1;
 let tabMatches = [];
 cmdInput.addEventListener('keydown', e => {
+  // Arrow keys for dropdown navigation
+  if (dropdownItems.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault();
+    if (e.key === 'ArrowDown') dropdownIdx = Math.min(dropdownIdx + 1, dropdownItems.length - 1);
+    else dropdownIdx = Math.max(dropdownIdx - 1, 0);
+    cmdDropdown.querySelectorAll('.cmd-item').forEach((el, i) => {
+      el.classList.toggle('active', i === dropdownIdx);
+    });
+    scrollDropdownToActive();
+    if (dropdownIdx >= 0) centerOnNode(dropdownItems[dropdownIdx].path);
+    return;
+  }
   if (e.key === 'Tab') {
     e.preventDefault();
+    // Tab-complete from dropdown selection
+    if (dropdownItems.length > 0 && dropdownIdx >= 0) {
+      const f = dropdownItems[dropdownIdx];
+      if (f.isNode) {
+        cmdInput.value = 'find ' + f.name + '/';
+      } else {
+        // Go to parent node's browse view
+        const lastSlash = f.path.lastIndexOf('/');
+        const nodeName = lastSlash >= 0 ? f.path.slice(lastSlash + 1) : f.path;
+        cmdInput.value = 'find ' + nodeName + '/';
+      }
+      dropdownIdx = -1;
+      updateGhost();
+      updateDropdown();
+      return;
+    }
+    // Tab-complete commands
     const val = cmdInput.value.trim().toLowerCase();
     if (tabMatches.length === 0 || tabMatches._query !== val) {
       tabMatches = cmdList.filter(c => c.startsWith(val) && c !== val);
@@ -1328,16 +1547,26 @@ cmdInput.addEventListener('keydown', e => {
     tabIdx = (tabIdx + 1) % tabMatches.length;
     cmdInput.value = tabMatches[tabIdx];
     updateGhost();
+    updateDropdown();
     return;
   }
   tabMatches = []; tabIdx = -1;
-  if (e.key === 'Escape') { closeCmdBar(); e.stopPropagation(); return; }
+  if (e.key === 'Escape') { closeCmdBar(true); e.stopPropagation(); return; }
   if (e.key === 'Enter') {
+    if (dropdownItems.length > 0 && dropdownIdx >= 0) {
+      selectDropdownItem(dropdownIdx);
+      e.stopPropagation();
+      return;
+    }
     const cmd = cmdInput.value.trim().toLowerCase();
-    closeCmdBar();
+    closeCmdBar(true);
     if (cmd === 'manual' || cmd === 'man' || cmd === 'help') {
       helpPanel.style.display = helpPanel.style.display === 'block' ? 'none' : 'block';
       hintEl.style.display = helpPanel.style.display === 'block' ? 'none' : 'block';
+    } else if (cmd === 'find' || cmd === '') {
+      // "find" with no query or empty — do nothing
+    } else if (cmd.startsWith('find ')) {
+      showStatus('No results');
     } else if (cmd) {
       showStatus('Unknown command: ' + cmd);
     }
@@ -1377,6 +1606,20 @@ document.addEventListener('keydown', e => {
     openCmdBar();
     return;
   }
+  if (e.key === 'f') {
+    e.preventDefault();
+    openCmdBar();
+    cmdInput.value = 'find ';
+    updateGhost();
+    return;
+  }
+  const panStep = 60;
+  if (e.key === 'h') { camX += panStep / zoom; draw(); saveView(); return; }
+  if (e.key === 'j') { camY -= panStep / zoom; draw(); saveView(); return; }
+  if (e.key === 'k') { camY += panStep / zoom; draw(); saveView(); return; }
+  if (e.key === 'l') { camX -= panStep / zoom; draw(); saveView(); return; }
+  if (e.key === 'i' && !e.ctrlKey) { zoom = Math.min(10, zoom * 1.15); draw(); saveView(); return; }
+  if (e.key === 'o' && !e.ctrlKey) { zoom = Math.max(0.2, zoom / 1.15); draw(); saveView(); return; }
   if (e.key === 'd') {
     if (ccmdPanel.style.display === 'flex') {
       ccmdPanel.style.display = 'none';

@@ -19,8 +19,10 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 - Canvas-based radial tree layout with smooth zoom and pan
 - Click any node to view its CLAUDE.md; right-click to browse all .md files
 - Side panel Markdown viewer with resizing, font scaling, and left/right positioning
-- Command palette (`:`) with tab auto-completion and ghost text
+- Command palette (`:`) with tab auto-completion, ghost text, and file finder
+- Find files by node name (`find hub`) or browse children (`find hub/`)
 - Jump list navigation (Ctrl+O / Ctrl+I) across viewed files
+- Vim-style navigation (h/j/k/l to pan, i/o to zoom)
 - Expand/collapse subtrees by depth level (1-7) or per-node (middle-click)
 - All view and panel settings persisted in localStorage across sessions
 
@@ -28,22 +30,45 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 
 1. Open `index.html` in a modern browser (Chrome/Edge recommended)
 2. Click **Open Folder** to select a project directory
-3. Navigate the tree with mouse; press `?` for the full shortcut list
+3. Navigate the tree with mouse or keyboard; press `?` for the full shortcut list
 
 ## Shortcuts
 
+### Mouse
+
 | Key | Action |
 |-----|--------|
-| scroll | Zoom |
 | drag | Pan canvas |
-| left-click | View node's CLAUDE.md |
-| middle-click | Expand / collapse node |
+| left-click | Node → view CLAUDE.md |
 | mid-dblclick | Reset view |
-| right-click node | List .md files |
-| d | Toggle viewer panel |
-| 1-7 | Expand to depth N |
-| +/- | Viewer font size |
-| H / L | Viewer to left / right |
-| Ctrl+O / Ctrl+I | Jump back / forward |
-| : | Command palette |
+| middle-click | Node → expand / collapse |
+| right-click | Node → list .md files |
+| right-click | Viewer → reload file |
+| scroll | Zoom |
+
+### Navigation
+
+| Key | Action |
+|-----|--------|
+| 1-7 | Expand to level N |
+| h/j/k/l | Move left / down / up / right |
+| i/o | Zoom in / out |
+
+### Viewer
+
+| Key | Action |
+|-----|--------|
+| +/- | Font size |
+| Ctrl+O/I | Jump back / forward |
+| H/L | Move to left / right |
+| d | Toggle viewer |
+| r | Reload file |
+
+### Other
+
+| Key | Action |
+|-----|--------|
+| : | Command bar |
+| f | Find (command bar with `find `) |
 | ? | Toggle shortcut help |
+| R | Rescan folder |
