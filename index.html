@@ -597,7 +597,7 @@ async function jumpTo(entry) {
   ccmdBody.innerHTML = renderMarkdown(content);
   ccmdPanel.style.display = 'flex';
   saveMdv();
-  draw();
+  centerOnNode(entry.path);
 }
 
 let camX = 0, camY = 0, zoom = 1;
