@@ -96,6 +96,46 @@
     transition: background 0.15s;
   }
   #prompt button:hover { background: #30363d; }
+  #cmd-bar {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    display: none;
+  }
+  #cmd-wrap {
+    position: relative;
+    width: 480px;
+  }
+  #cmd-input, #cmd-shadow {
+    width: 100%;
+    padding: 10px 16px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 14px;
+    border-radius: 8px;
+  }
+  #cmd-input {
+    background: rgba(13, 17, 23, 0.96);
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    outline: none;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+    position: relative;
+  }
+  #cmd-shadow {
+    position: absolute;
+    top: 0; left: 0;
+    border: 1px solid transparent;
+    pointer-events: none;
+    z-index: 1;
+    white-space: pre;
+    overflow: hidden;
+  }
+  #cmd-shadow .typed { visibility: hidden; }
+  #cmd-shadow .ghost { color: #484f58; }
+  #cmd-input::placeholder { color: #484f58; }
+  #cmd-input:focus { border-color: #58a6ff; }
   #status {
     position: fixed;
     top: 50px;
@@ -142,7 +182,7 @@
   }
   #ccmd-title {
     color: #f0883e;
-    font-size: 13px;
+    font-size: 1.08em;
     font-weight: bold;
   }
   #ccmd-close {
@@ -159,7 +199,7 @@
     overflow-y: auto;
     padding: 16px 18px;
     color: #c9d1d9;
-    font-size: 12px;
+    font-size: 1em;
     line-height: 1.7;
     scrollbar-width: thin;
     scrollbar-color: #30363d transparent;
@@ -171,9 +211,9 @@
     border-radius: 3px;
   }
   #ccmd-body::-webkit-scrollbar-thumb:hover { background: #484f58; }
-  #ccmd-body h1 { font-size: 16px; color: #f0883e; margin: 0 0 12px 0; }
-  #ccmd-body h2 { font-size: 14px; color: #58a6ff; margin: 16px 0 8px 0; }
-  #ccmd-body h3 { font-size: 13px; color: #58a6ff; margin: 12px 0 6px 0; }
+  #ccmd-body h1 { font-size: 1.35em; color: #f0883e; margin: 0 0 12px 0; }
+  #ccmd-body h2 { font-size: 1.17em; color: #58a6ff; margin: 16px 0 8px 0; }
+  #ccmd-body h3 { font-size: 1.08em; color: #58a6ff; margin: 12px 0 6px 0; }
   #ccmd-body p { margin: 6px 0; }
   #ccmd-body ul { margin: 4px 0 4px 20px; }
   #ccmd-body li { margin: 2px 0; }
@@ -182,7 +222,7 @@
     padding: 1px 5px;
     border-radius: 3px;
     color: #7ee787;
-    font-size: 11px;
+    font-size: 0.92em;
   }
   #ccmd-body pre {
     background: #161b22;
@@ -191,7 +231,7 @@
     padding: 10px 12px;
     overflow-x: auto;
     margin: 8px 0;
-    font-size: 11px;
+    font-size: 0.92em;
     line-height: 1.5;
   }
   #ccmd-body pre code {
@@ -204,7 +244,7 @@
   #ccmd-body th, #ccmd-body td {
     border: 1px solid #21262d;
     padding: 4px 8px;
-    font-size: 11px;
+    font-size: 0.92em;
     text-align: left;
   }
   #ccmd-body th { background: #161b22; color: #58a6ff; }
@@ -253,19 +293,26 @@
   <div class="msg">Select a folder to visualize</div>
   <button id="pickBtn">Open Folder</button>
 </div>
+<div id="cmd-bar"><div id="cmd-wrap"><span id="cmd-shadow"></span><input id="cmd-input" type="text" placeholder="Enter command..." /></div></div>
 <div id="status"></div>
 <div id="help">
   <div><span class="key">scroll</span>zoom</div>
   <div><span class="key">drag</span>pan canvas</div>
   <div><span class="key">left-click</span>node → view CLAUDE.md</div>
   <div><span class="key">middle-click</span>node → expand / collapse</div>
+  <div><span class="key">mid-dblclick</span>reset view</div>
   <div><span class="key">right-click</span>node → list .md files</div>
   <div><span class="key">right-click</span>viewer → reload file</div>
-  <div><span class="key">1-5</span>expand to level N</div>
+  <div><span class="key">d</span>toggle viewer</div>
+  <div><span class="key">1-7</span>expand to level N</div>
   <div><span class="key">r</span>reload current file</div>
   <div><span class="key">R</span>rescan folder</div>
+  <div><span class="key">+/-</span>viewer font size</div>
   <div><span class="key">H</span>viewer to left</div>
   <div><span class="key">L</span>viewer to right</div>
+  <div><span class="key">Ctrl+O</span>jump back</div>
+  <div><span class="key">Ctrl+I</span>jump forward</div>
+  <div><span class="key">:</span>command bar</div>
   <div><span class="key">?</span>close this panel</div>
   <div class="storage" id="storageInfo"></div>
 </div>
@@ -334,8 +381,74 @@ let treeData = null;
 let dirHandle = null;
 let selectedNodePath = null;
 let selectedFileName = null;
+let ccmdFontSize = 12;
 let panelSide = 'left';
+
+const MDV_KEY = 'hub-tree-mdv';
+function saveMdv() {
+  localStorage.setItem(MDV_KEY, JSON.stringify({
+    side: panelSide,
+    width: parseInt(ccmdPanel.style.width) || 420,
+    fontSize: ccmdFontSize,
+    viewPath: selectedNodePath,
+    viewFile: selectedFileName
+  }));
+}
+(function loadMdv() {
+  try {
+    const s = JSON.parse(localStorage.getItem(MDV_KEY));
+    if (!s) return;
+    if (s.fontSize) { ccmdFontSize = s.fontSize; ccmdPanel.style.fontSize = ccmdFontSize + 'px'; }
+    if (s.width) ccmdPanel.style.width = s.width + 'px';
+    if (s.side) panelSide = s.side;
+  } catch (e) {}
+})();
+const JUMP_KEY = 'hub-tree-jumplist';
+let jumpList = [];
+let jumpIdx = -1;
+(function loadJumpList() {
+  try {
+    const s = JSON.parse(localStorage.getItem(JUMP_KEY));
+    if (s) { jumpList = s.list || []; jumpIdx = s.idx ?? -1; }
+  } catch (e) {}
+})();
+function saveJumpList() {
+  localStorage.setItem(JUMP_KEY, JSON.stringify({ list: jumpList, idx: jumpIdx }));
+}
+function jumpPush(path, file) {
+  if (jumpIdx >= 0 && jumpIdx < jumpList.length) {
+    const cur = jumpList[jumpIdx];
+    if (cur.path === path && cur.file === file) return;
+  }
+  jumpList = jumpList.slice(0, jumpIdx + 1);
+  jumpList.push({ path, file });
+  jumpIdx = jumpList.length - 1;
+  saveJumpList();
+}
+async function jumpTo(entry) {
+  if (!dirHandle) return;
+  const content = await readMdFile(entry.path, entry.file);
+  if (content === null) return;
+  selectedNodePath = entry.path;
+  selectedFileName = entry.file;
+  ccmdTitle.textContent = entry.path + '/' + entry.file;
+  ccmdBody.innerHTML = renderMarkdown(content);
+  ccmdPanel.style.display = 'flex';
+  saveMdv();
+  draw();
+}
+
+const VIEW_KEY = 'hub-tree-view';
 let camX = 0, camY = 0, zoom = 1;
+function saveView() {
+  localStorage.setItem(VIEW_KEY, JSON.stringify({ camX, camY, zoom }));
+}
+(function loadView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEW_KEY));
+    if (v) { camX = v.camX; camY = v.camY; zoom = v.zoom; }
+  } catch (e) {}
+})();
 let dragging = false, dragStartX, dragStartY, camStartX, camStartY;
 const nodes = [];
 const collapsed = new Set();
@@ -485,7 +598,7 @@ function getStorageInfo() {
 
 // --- Directory scanning ---
 
-async function scanDir(handle, maxDepth = 4, depth = 0) {
+async function scanDir(handle, maxDepth = 7, depth = 0) {
   const node = { name: handle.name };
   if (depth >= maxDepth) return node;
 
@@ -643,6 +756,8 @@ function showCtxMenu(x, y, nodePath, mdFiles, isLeaf) {
           ccmdTitle.textContent = nodePath + '/' + f;
           ccmdBody.innerHTML = renderMarkdown(content);
           ccmdPanel.style.display = 'flex';
+          jumpPush(nodePath, f);
+          saveMdv();
         }
       });
       ctxMenu.appendChild(item);
@@ -779,9 +894,10 @@ function draw() {
     const my = (p1.y + p2.y) / 2;
     ctx.quadraticCurveTo(mx + (p2.y - p1.y) * 0.1, my - (p2.x - p1.x) * 0.1, p2.x, p2.y);
 
-    const thickness = Math.max(0.8, (4 - node.depth) * zoom);
+    const d = Math.min(node.depth, 5);
+    const thickness = Math.max(0.8, (5 - d) * 0.8 * zoom);
     ctx.lineWidth = thickness;
-    const alpha = Math.min(1, 0.3 + 0.2 * (3 - node.depth));
+    const alpha = 0.3 + 0.15 * (5 - d);
     ctx.strokeStyle = `rgba(101, 78, 50, ${alpha})`;
     ctx.stroke();
   });
@@ -864,10 +980,36 @@ function draw() {
     if (collapsed.has(i)) {
       ctx.save();
       ctx.font = `bold ${Math.max(8, 10 * zoom)}px "Cascadia Code", monospace`;
-      ctx.fillStyle = '#f0883e';
+      ctx.fillStyle = node.depth === 0 ? '#b35f1a' : node.isLeaf ? '#3d8b45' : '#2a6cbf';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('+', s.x, s.y);
+      ctx.restore();
+    }
+
+    // Viewing indicator — yellow arrow pointing to node
+    if (selectedNodePath === node.path && ccmdPanel.style.display === 'flex') {
+      ctx.save();
+      const arrOff = sr + Math.max(6, 8 * zoom);
+      const arrLen = Math.max(12, 16 * zoom);
+      const headLen = Math.max(5, 6 * zoom);
+      const headHW = Math.max(3, 3.5 * zoom);
+      const lw = Math.max(1.2, 1.5 * zoom);
+      // Shaft
+      ctx.beginPath();
+      ctx.moveTo(s.x - arrOff - arrLen, s.y);
+      ctx.lineTo(s.x - arrOff - headLen, s.y);
+      ctx.strokeStyle = '#e3b341';
+      ctx.lineWidth = lw;
+      ctx.stroke();
+      // Arrowhead
+      ctx.beginPath();
+      ctx.moveTo(s.x - arrOff, s.y);
+      ctx.lineTo(s.x - arrOff - headLen, s.y - headHW);
+      ctx.lineTo(s.x - arrOff - headLen, s.y + headHW);
+      ctx.closePath();
+      ctx.fillStyle = '#e3b341';
+      ctx.fill();
       ctx.restore();
     }
 
@@ -924,7 +1066,23 @@ if (cached) {
     if (!handle) return;
     let perm = await handle.queryPermission({ mode: 'read' });
     if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'read' });
-    if (perm === 'granted') dirHandle = handle;
+    if (perm === 'granted') {
+      dirHandle = handle;
+      // Restore mdv viewing state
+      try {
+        const s = JSON.parse(localStorage.getItem(MDV_KEY));
+        if (s && s.viewPath && s.viewFile) {
+          const content = await readMdFile(s.viewPath, s.viewFile);
+          if (content !== null) {
+            selectedNodePath = s.viewPath;
+            selectedFileName = s.viewFile;
+            ccmdTitle.textContent = s.viewPath + '/' + s.viewFile;
+            ccmdBody.innerHTML = renderMarkdown(content);
+            ccmdPanel.style.display = 'flex';
+          }
+        }
+      } catch (e) {}
+    }
   } catch (e) {}
 })();
 
@@ -945,6 +1103,7 @@ canvas.addEventListener('wheel', e => {
   camY = (my - H / 2) / zoom - wy;
 
   draw();
+  saveView();
 }, { passive: false });
 
 // --- Pan & Click ---
@@ -986,6 +1145,7 @@ canvas.addEventListener('mousemove', e => {
 
 canvas.addEventListener('mouseup', async e => {
   dragging = false;
+  saveView();
   if (e.button !== 0) return; // left-click only
   const dx = e.clientX - clickStartX, dy = e.clientY - clickStartY;
   if (dx * dx + dy * dy < 9) {
@@ -1007,6 +1167,8 @@ canvas.addEventListener('mouseup', async e => {
           ccmdBody.innerHTML = '<div id="ccmd-empty">No CLAUDE.md found</div>';
         }
         ccmdPanel.style.display = 'flex';
+        jumpPush(n.path, 'CLAUDE.md');
+        saveMdv();
         break;
       }
     }
@@ -1014,10 +1176,21 @@ canvas.addEventListener('mouseup', async e => {
 });
 canvas.addEventListener('mouseleave', () => { dragging = false; tooltip.style.display = 'none'; });
 
-// --- Middle-click: expand/collapse ---
+// --- Middle-click: expand/collapse + double-click reset ---
+let lastMidClick = 0;
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 1) return;
   e.preventDefault();
+  const now = Date.now();
+  if (now - lastMidClick < 350) {
+    camX = 0; camY = 0; zoom = 1;
+    draw();
+    saveView();
+    showStatus('View reset');
+    lastMidClick = 0;
+    return;
+  }
+  lastMidClick = now;
   const world = toWorld(e.clientX, e.clientY);
   for (let i = nodes.length - 1; i >= 0; i--) {
     const n = nodes[i];
@@ -1057,6 +1230,7 @@ document.getElementById('ccmd-close').addEventListener('click', () => {
   ccmdPanel.style.display = 'none';
   selectedNodePath = null;
   selectedFileName = null;
+  saveMdv();
 });
 
 // Dismiss context menu on click outside
@@ -1093,22 +1267,143 @@ document.addEventListener('mouseup', () => {
     ccmdDrag.classList.remove('active');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
+    saveMdv();
   }
 });
 
 // --- Keyboard shortcuts ---
 const helpPanel = document.getElementById('help');
 const hintEl = document.getElementById('hint');
-document.addEventListener('keydown', e => {
-  // Close ccmd panel on Escape
-  if (e.key === 'Escape') {
-    ccmdPanel.style.display = 'none';
-    ctxMenu.style.display = 'none';
-    selectedNodePath = null;
-    selectedFileName = null;
+if (panelSide === 'right') {
+  ccmdPanel.style.right = '0'; ccmdPanel.style.left = 'auto';
+  ccmdPanel.style.borderLeft = '1px solid #30363d'; ccmdPanel.style.borderRight = 'none';
+  ccmdDrag.style.left = '-4px'; ccmdDrag.style.right = 'auto';
+  helpPanel.style.right = 'auto'; helpPanel.style.left = '20px';
+  hintEl.style.right = 'auto'; hintEl.style.left = '16px';
+}
+const cmdBar = document.getElementById('cmd-bar');
+const cmdInput = document.getElementById('cmd-input');
+const cmdShadow = document.getElementById('cmd-shadow');
+let cmdBarOpen = false;
+const cmdList = ['help', 'manual', 'man'];
+
+function updateGhost() {
+  const val = cmdInput.value.toLowerCase();
+  if (!val) { cmdShadow.innerHTML = ''; return; }
+  const match = cmdList.find(c => c.startsWith(val) && c !== val);
+  if (match) {
+    cmdShadow.innerHTML = '<span class="typed">' + match.slice(0, val.length) + '</span><span class="ghost">' + match.slice(val.length) + '</span>';
+  } else {
+    cmdShadow.innerHTML = '';
+  }
+}
+
+function openCmdBar() {
+  cmdBar.style.display = 'block';
+  cmdInput.value = '';
+  cmdShadow.innerHTML = '';
+  cmdInput.focus();
+  cmdBarOpen = true;
+}
+function closeCmdBar() {
+  cmdBar.style.display = 'none';
+  cmdShadow.innerHTML = '';
+  cmdInput.blur();
+  cmdBarOpen = false;
+}
+cmdInput.addEventListener('blur', () => { closeCmdBar(); });
+cmdInput.addEventListener('input', () => { updateGhost(); });
+let tabIdx = -1;
+let tabMatches = [];
+cmdInput.addEventListener('keydown', e => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const val = cmdInput.value.trim().toLowerCase();
+    if (tabMatches.length === 0 || tabMatches._query !== val) {
+      tabMatches = cmdList.filter(c => c.startsWith(val) && c !== val);
+      tabMatches._query = val;
+      tabIdx = -1;
+    }
+    if (tabMatches.length === 0) return;
+    tabIdx = (tabIdx + 1) % tabMatches.length;
+    cmdInput.value = tabMatches[tabIdx];
+    updateGhost();
     return;
   }
-  if (e.key >= '1' && e.key <= '5') {
+  tabMatches = []; tabIdx = -1;
+  if (e.key === 'Escape') { closeCmdBar(); e.stopPropagation(); return; }
+  if (e.key === 'Enter') {
+    const cmd = cmdInput.value.trim().toLowerCase();
+    closeCmdBar();
+    if (cmd === 'manual' || cmd === 'man' || cmd === 'help') {
+      helpPanel.style.display = helpPanel.style.display === 'block' ? 'none' : 'block';
+      hintEl.style.display = helpPanel.style.display === 'block' ? 'none' : 'block';
+    } else if (cmd) {
+      showStatus('Unknown command: ' + cmd);
+    }
+    e.stopPropagation();
+    return;
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (cmdBarOpen) return;
+  if (e.key === 'Escape') {
+    ctxMenu.style.display = 'none';
+    return;
+  }
+  if (e.key === 'o' && e.ctrlKey && ccmdPanel.style.display === 'flex') {
+    e.preventDefault();
+    if (jumpIdx > 0) {
+      jumpIdx--;
+      saveJumpList();
+      jumpTo(jumpList[jumpIdx]);
+      showStatus('Jump ' + (jumpIdx + 1) + '/' + jumpList.length);
+    }
+    return;
+  }
+  if (e.key === 'i' && e.ctrlKey && ccmdPanel.style.display === 'flex') {
+    e.preventDefault();
+    if (jumpIdx < jumpList.length - 1) {
+      jumpIdx++;
+      saveJumpList();
+      jumpTo(jumpList[jumpIdx]);
+      showStatus('Jump ' + (jumpIdx + 1) + '/' + jumpList.length);
+    }
+    return;
+  }
+  if (e.key === ':') {
+    e.preventDefault();
+    openCmdBar();
+    return;
+  }
+  if (e.key === 'd') {
+    if (ccmdPanel.style.display === 'flex') {
+      ccmdPanel.style.display = 'none';
+      draw();
+    } else {
+      // Reopen with latest viewed file from storage
+      try {
+        const s = JSON.parse(localStorage.getItem(MDV_KEY));
+        if (!s || !s.viewPath || !s.viewFile) return;
+        if (dirHandle) {
+          (async () => {
+            const content = await readMdFile(s.viewPath, s.viewFile);
+            if (content !== null) {
+              selectedNodePath = s.viewPath;
+              selectedFileName = s.viewFile;
+              ccmdTitle.textContent = s.viewPath + '/' + s.viewFile;
+              ccmdBody.innerHTML = renderMarkdown(content);
+              ccmdPanel.style.display = 'flex';
+              draw();
+            }
+          })();
+        }
+      } catch (e) {}
+    }
+    return;
+  }
+  if (e.key >= '1' && e.key <= '7') {
     const level = parseInt(e.key);
     collapsed.clear();
     nodes.forEach((n, i) => {
@@ -1116,6 +1411,20 @@ document.addEventListener('keydown', e => {
     });
     draw();
     showStatus('Level ' + level);
+  }
+  if ((e.key === '+' || e.key === '=') && ccmdPanel.style.display === 'flex') {
+    ccmdFontSize = Math.min(24, ccmdFontSize + 1);
+    ccmdPanel.style.fontSize = ccmdFontSize + 'px';
+    saveMdv();
+    showStatus('Font ' + ccmdFontSize + 'px');
+    return;
+  }
+  if (e.key === '-' && ccmdPanel.style.display === 'flex') {
+    ccmdFontSize = Math.max(8, ccmdFontSize - 1);
+    ccmdPanel.style.fontSize = ccmdFontSize + 'px';
+    saveMdv();
+    showStatus('Font ' + ccmdFontSize + 'px');
+    return;
   }
   if (e.key === 'r') { reloadCcmd(); }
   if (e.key === 'R') { rescan(); }
@@ -1131,6 +1440,7 @@ document.addEventListener('keydown', e => {
     helpPanel.style.right = '20px';
     hintEl.style.left = 'auto';
     hintEl.style.right = '16px';
+    saveMdv();
   }
   if (e.key === 'L' && ccmdPanel.style.display === 'flex') {
     panelSide = 'right';
@@ -1144,6 +1454,7 @@ document.addEventListener('keydown', e => {
     helpPanel.style.left = '20px';
     hintEl.style.right = 'auto';
     hintEl.style.left = '16px';
+    saveMdv();
   }
   if (e.key === '?') {
     const show = helpPanel.style.display === 'none' || !helpPanel.style.display;
