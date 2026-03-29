@@ -254,6 +254,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    display: none;
   }
   #ccmd-title {
     color: #f0883e;
@@ -269,6 +270,98 @@
     font-family: inherit;
   }
   #ccmd-close:hover { color: #c9d1d9; }
+  #ccmd-toolbar {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    border-bottom: 1px solid #21262d;
+    gap: 2px;
+  }
+  #addr-bar {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    direction: rtl;
+    margin: 0 4px;
+    min-width: 0;
+  }
+  #addr-bar-inner {
+    display: flex;
+    align-items: center;
+    direction: ltr;
+    white-space: nowrap;
+    margin-left: auto;
+  }
+  .addr-sep {
+    color: #484f58;
+    font-size: 11px;
+    margin: 0 1px;
+    flex-shrink: 0;
+  }
+  .addr-seg {
+    color: #8b949e;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .addr-seg:hover { background: #21262d; color: #c9d1d9; }
+  .addr-seg.addr-file { color: #f0883e; }
+  .addr-seg.addr-root { color: #58a6ff; }
+  #addr-dropdown {
+    position: fixed;
+    background: rgba(22, 27, 34, 0.98);
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 50;
+    min-width: 120px;
+    display: none;
+    scrollbar-width: thin;
+    scrollbar-color: #30363d transparent;
+  }
+  #addr-dropdown .addr-dd-item {
+    padding: 5px 12px;
+    font-size: 12px;
+    color: #c9d1d9;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #addr-dropdown .addr-dd-item:hover,
+  #addr-dropdown .addr-dd-item.active {
+    background: #21262d;
+  }
+  #addr-dropdown .addr-dd-item.current {
+    color: #f0883e;
+  }
+  .tb-group { display: flex; align-items: center; gap: 2px; }
+  .tb-group button {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #c9d1d9;
+    font-family: inherit;
+    font-size: 14px;
+    width: 28px;
+    height: 26px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .tb-group button:hover:not(:disabled) { background: #21262d; border-color: #30363d; }
+  .tb-group button:disabled { color: #484f58; cursor: default; opacity: 0.4; }
+  #tb-font-size {
+    color: #8b949e;
+    font-size: 11px;
+    min-width: 24px;
+    text-align: center;
+  }
   #ccmd-body {
     flex: 1;
     overflow-y: auto;
@@ -323,6 +416,8 @@
     text-align: left;
   }
   #ccmd-body th { background: #161b22; color: #58a6ff; }
+  #ccmd-body a { color: #58a6ff; text-decoration: none; }
+  #ccmd-body a:hover { text-decoration: underline; }
   #ccmd-body blockquote {
     border-left: 3px solid #30363d;
     padding-left: 12px;
@@ -404,6 +499,20 @@
     <span id="ccmd-title"></span>
     <button id="ccmd-close">&times;</button>
   </div>
+  <div id="ccmd-toolbar">
+    <div class="tb-group">
+      <button id="tb-back" title="Back (Ctrl+O)">←</button>
+      <button id="tb-fwd" title="Forward (Ctrl+I)">→</button>
+      <button id="tb-refresh" title="Refresh (r)">↻</button>
+    </div>
+    <div id="addr-bar"><div id="addr-bar-inner"></div></div>
+    <div class="tb-group">
+      <button id="tb-font-dec" title="Decrease font">−</button>
+      <span id="tb-font-size">12</span>
+      <button id="tb-font-inc" title="Increase font">+</button>
+    </div>
+  </div>
+  <div id="addr-dropdown"></div>
   <div id="ccmd-body"></div>
 </div>
 <script>
@@ -598,6 +707,7 @@ async function jumpTo(entry) {
   ccmdPanel.style.display = 'flex';
   saveMdv();
   centerOnNode(entry.path);
+  if (typeof updateToolbar === 'function') updateToolbar();
 }
 
 let camX = 0, camY = 0, zoom = 1;
@@ -763,6 +873,7 @@ function inlineMd(s) {
   s = escHtml(s);
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/`(.+?)`/g, '<code>$1</code>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   return s;
 }
 
@@ -958,6 +1069,7 @@ function showCtxMenu(x, y, nodePath, mdFiles, isLeaf) {
           ccmdPanel.style.display = 'flex';
           jumpPush(nodePath, f);
           saveMdv();
+          updateToolbar();
         }
       });
       ctxMenu.appendChild(item);
@@ -979,6 +1091,7 @@ async function reloadCcmd() {
     ccmdTitle.textContent = selectedNodePath + '/' + fname;
     ccmdBody.innerHTML = renderMarkdown(content);
     showStatus(fname + ' reloaded');
+    updateToolbar();
   } catch (e) {}
 }
 
@@ -1382,6 +1495,7 @@ canvas.addEventListener('mouseup', async e => {
         ccmdPanel.style.display = 'flex';
         jumpPush(n.path, 'CLAUDE.md');
         saveMdv();
+        updateToolbar();
         break;
       }
     }
@@ -1460,6 +1574,213 @@ ccmdPanel.addEventListener('contextmenu', e => {
   e.preventDefault();
   reloadCcmd();
 });
+
+// --- Toolbar buttons ---
+const tbBack = document.getElementById('tb-back');
+const tbFwd = document.getElementById('tb-fwd');
+const tbRefresh = document.getElementById('tb-refresh');
+const tbFontDec = document.getElementById('tb-font-dec');
+const tbFontInc = document.getElementById('tb-font-inc');
+const tbFontSize = document.getElementById('tb-font-size');
+
+function updateToolbar() {
+  tbBack.disabled = jumpIdx <= 0;
+  tbFwd.disabled = jumpIdx >= jumpList.length - 1;
+  tbFontSize.textContent = ccmdFontSize;
+  buildAddrBar();
+}
+// Auto-update toolbar when panel becomes visible
+new MutationObserver(() => {
+  if (ccmdPanel.style.display === 'flex') updateToolbar();
+}).observe(ccmdPanel, { attributes: true, attributeFilter: ['style'] });
+
+tbBack.addEventListener('click', () => {
+  if (jumpIdx > 0) { jumpIdx--; saveJumpList(); jumpTo(jumpList[jumpIdx]); }
+});
+tbFwd.addEventListener('click', () => {
+  if (jumpIdx < jumpList.length - 1) { jumpIdx++; saveJumpList(); jumpTo(jumpList[jumpIdx]); }
+});
+tbRefresh.addEventListener('click', () => reloadCcmd());
+tbFontDec.addEventListener('click', () => {
+  ccmdFontSize = Math.max(8, ccmdFontSize - 1);
+  ccmdPanel.style.fontSize = ccmdFontSize + 'px';
+  saveMdv();
+  updateToolbar();
+});
+tbFontInc.addEventListener('click', () => {
+  ccmdFontSize = Math.min(24, ccmdFontSize + 1);
+  ccmdPanel.style.fontSize = ccmdFontSize + 'px';
+  saveMdv();
+  updateToolbar();
+});
+
+// --- Address bar ---
+const addrBarInner = document.getElementById('addr-bar-inner');
+const addrDropdown = document.getElementById('addr-dropdown');
+
+function truncName(name, max) {
+  if (!max) max = 10;
+  return name.length > max ? name.slice(0, max - 1) + '…' : name;
+}
+
+function getSiblingNodes(path) {
+  if (!treeData) return [];
+  const parts = path.split('/');
+  if (parts.length <= 1) return []; // root has no siblings
+  let parent = treeData;
+  for (let i = 1; i < parts.length - 1; i++) {
+    if (!parent.children) return [];
+    parent = parent.children.find(c => c.name === parts[i]);
+    if (!parent) return [];
+  }
+  return (parent.children || []).map(c => c.name);
+}
+
+function getChildNodes(path) {
+  if (!treeData) return [];
+  let node = treeData;
+  const parts = path.split('/');
+  for (let i = 1; i < parts.length; i++) {
+    if (!node.children) return [];
+    node = node.children.find(c => c.name === parts[i]);
+    if (!node) return [];
+  }
+  return (node.children || []).map(c => c.name);
+}
+
+function buildAddrBar() {
+  if (!selectedNodePath || !selectedFileName) { addrBarInner.innerHTML = ''; return; }
+  const parts = selectedNodePath.split('/');
+  addrBarInner.innerHTML = '';
+
+  parts.forEach((name, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'addr-sep';
+      sep.textContent = '/';
+      addrBarInner.appendChild(sep);
+    }
+    const seg = document.createElement('span');
+    seg.className = 'addr-seg' + (i === 0 ? ' addr-root' : '');
+    seg.textContent = truncName(name);
+    seg.title = name;
+    seg.dataset.idx = i;
+    seg.addEventListener('click', e => {
+      e.stopPropagation();
+      onAddrSegClick(seg, i, parts);
+    });
+    addrBarInner.appendChild(seg);
+  });
+
+  // File separator and file segment
+  const sep = document.createElement('span');
+  sep.className = 'addr-sep';
+  sep.textContent = '/';
+  addrBarInner.appendChild(sep);
+
+  const fileSeg = document.createElement('span');
+  fileSeg.className = 'addr-seg addr-file';
+  fileSeg.textContent = truncName(selectedFileName);
+  fileSeg.title = selectedFileName;
+  fileSeg.addEventListener('click', e => {
+    e.stopPropagation();
+    onFileSegClick(fileSeg);
+  });
+  addrBarInner.appendChild(fileSeg);
+}
+
+function showAddrDropdown(anchor, items, currentName, onSelect) {
+  const rect = anchor.getBoundingClientRect();
+  addrDropdown.innerHTML = items.map(name => {
+    const isCurrent = name === currentName;
+    return '<div class="addr-dd-item' + (isCurrent ? ' current' : '') + '" data-name="' +
+      name.replace(/"/g, '&quot;') + '">' + truncName(name, 30) + '</div>';
+  }).join('');
+  addrDropdown.style.left = rect.left + 'px';
+  addrDropdown.style.top = (rect.bottom + 2) + 'px';
+  addrDropdown.style.display = 'block';
+  addrDropdown.querySelectorAll('.addr-dd-item').forEach(el => {
+    el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      addrDropdown.style.display = 'none';
+      onSelect(el.dataset.name);
+    });
+  });
+}
+
+function hideAddrDropdown(e) {
+  if (e && addrDropdown.contains(e.target)) return;
+  addrDropdown.style.display = 'none';
+}
+document.addEventListener('mousedown', e => {
+  if (!addrDropdown.contains(e.target)) hideAddrDropdown();
+});
+
+async function onAddrSegClick(seg, idx, parts) {
+  if (idx === 0) {
+    // Root segment: show recent roots
+    const history = await loadHistory();
+    if (history.length === 0) return;
+    const items = history.map(h => h.name);
+    showAddrDropdown(seg, items, activeRoot, async (name) => {
+      const entry = history.find(h => h.name === name);
+      if (!entry || !entry.handle) return;
+      try {
+        let perm = await entry.handle.queryPermission({ mode: 'read' });
+        if (perm !== 'granted') perm = await entry.handle.requestPermission({ mode: 'read' });
+        if (perm === 'granted') {
+          dirHandle = entry.handle;
+          setActiveRoot(dirHandle.name);
+          await saveHandle(dirHandle);
+          const ctx = await getTopChildren(dirHandle);
+          await saveHistory(dirHandle, ctx);
+          await scanAndRender();
+          await restoreRootState();
+        }
+      } catch (e) { showStatus('Cannot access folder'); }
+    });
+    return;
+  }
+  // Non-root node: show sibling nodes
+  const path = parts.slice(0, idx + 1).join('/');
+  const siblings = getSiblingNodes(path);
+  if (siblings.length === 0) return;
+  showAddrDropdown(seg, siblings, parts[idx], async (name) => {
+    const parentPath = parts.slice(0, idx).join('/');
+    const newPath = parentPath + '/' + name;
+    const content = await readMdFile(newPath, 'CLAUDE.md');
+    if (content !== null) {
+      selectedNodePath = newPath;
+      selectedFileName = 'CLAUDE.md';
+      ccmdTitle.textContent = newPath + '/CLAUDE.md';
+      ccmdBody.innerHTML = renderMarkdown(content);
+      ccmdPanel.style.display = 'flex';
+      jumpPush(newPath, 'CLAUDE.md');
+      saveMdv();
+      centerOnNode(newPath);
+      buildAddrBar();
+    } else {
+      showStatus('No CLAUDE.md in ' + name);
+    }
+  });
+}
+
+async function onFileSegClick(seg) {
+  if (!selectedNodePath) return;
+  const mdFiles = await listMdFiles(selectedNodePath);
+  if (mdFiles.length === 0) return;
+  showAddrDropdown(seg, mdFiles, selectedFileName, async (name) => {
+    const content = await readMdFile(selectedNodePath, name);
+    if (content !== null) {
+      selectedFileName = name;
+      ccmdTitle.textContent = selectedNodePath + '/' + name;
+      ccmdBody.innerHTML = renderMarkdown(content);
+      jumpPush(selectedNodePath, name);
+      saveMdv();
+      buildAddrBar();
+    }
+  });
+}
 
 // --- Ccmd panel resize drag ---
 const ccmdDrag = document.getElementById('ccmd-drag');
@@ -1691,6 +2012,7 @@ async function selectDropdownItem(idx) {
     jumpPush(f.path, fileName);
     saveMdv();
     centerOnNode(f.path);
+    updateToolbar();
   }
 }
 
@@ -1939,14 +2261,14 @@ document.addEventListener('keydown', e => {
     ccmdFontSize = Math.min(24, ccmdFontSize + 1);
     ccmdPanel.style.fontSize = ccmdFontSize + 'px';
     saveMdv();
-    showStatus('Font ' + ccmdFontSize + 'px');
+    updateToolbar();
     return;
   }
   if (e.key === '-' && ccmdPanel.style.display === 'flex') {
     ccmdFontSize = Math.max(8, ccmdFontSize - 1);
     ccmdPanel.style.fontSize = ccmdFontSize + 'px';
     saveMdv();
-    showStatus('Font ' + ccmdFontSize + 'px');
+    updateToolbar();
     return;
   }
   if (e.key === 'r') { reloadCcmd(); }
