@@ -282,15 +282,20 @@
     display: flex;
     align-items: center;
     overflow: hidden;
-    direction: rtl;
     margin: 0 4px;
     min-width: 0;
   }
   #addr-bar-inner {
     display: flex;
     align-items: center;
-    direction: ltr;
     white-space: nowrap;
+    max-width: 100%;
+  }
+  #addr-bar.overflow {
+    direction: rtl;
+  }
+  #addr-bar.overflow #addr-bar-inner {
+    direction: ltr;
     margin-left: auto;
   }
   .addr-sep {
@@ -309,8 +314,10 @@
     position: relative;
   }
   .addr-seg:hover { background: #21262d; color: #c9d1d9; }
-  .addr-seg.addr-file { color: #f0883e; }
-  .addr-seg.addr-root { color: #58a6ff; }
+  .addr-seg.addr-file { color: #c9d1d9; }
+  .addr-seg.addr-root { color: orange; }
+  .addr-seg.addr-branch { color: #58a6ff; }
+  .addr-seg.addr-leaf { color: #4ecf6a; }
   #addr-dropdown {
     position: fixed;
     background: rgba(22, 27, 34, 0.98);
@@ -1620,8 +1627,27 @@ const addrDropdown = document.getElementById('addr-dropdown');
 
 function truncName(name, max) {
   if (!max) max = 10;
-  return name.length > max ? name.slice(0, max - 1) + '…' : name;
+  if (name.length <= max) return name;
+  // For .md files, keep .md suffix
+  if (name.endsWith('.md')) {
+    return name.slice(0, max - 4) + '….md';
+  }
+  return name.slice(0, max - 1) + '…';
 }
+
+function isLeafPath(path) {
+  if (!treeData) return true;
+  let node = treeData;
+  const parts = path.split('/');
+  for (let i = 1; i < parts.length; i++) {
+    if (!node.children) return true;
+    node = node.children.find(c => c.name === parts[i]);
+    if (!node) return true;
+  }
+  return !node.children || node.children.length === 0;
+}
+
+let addrActiveAnchor = null;
 
 function getSiblingNodes(path) {
   if (!treeData) return [];
@@ -1649,9 +1675,11 @@ function getChildNodes(path) {
 }
 
 function buildAddrBar() {
+  const addrBar = document.getElementById('addr-bar');
   if (!selectedNodePath || !selectedFileName) { addrBarInner.innerHTML = ''; return; }
   const parts = selectedNodePath.split('/');
   addrBarInner.innerHTML = '';
+  addrBar.classList.remove('overflow');
 
   parts.forEach((name, i) => {
     if (i > 0) {
@@ -1660,9 +1688,14 @@ function buildAddrBar() {
       sep.textContent = '/';
       addrBarInner.appendChild(sep);
     }
+    const nodePath = parts.slice(0, i + 1).join('/');
+    let cls = 'addr-seg';
+    if (i === 0) cls += ' addr-root';
+    else if (isLeafPath(nodePath)) cls += ' addr-leaf';
+    else cls += ' addr-branch';
     const seg = document.createElement('span');
-    seg.className = 'addr-seg' + (i === 0 ? ' addr-root' : '');
-    seg.textContent = truncName(name);
+    seg.className = cls;
+    seg.textContent = name;
     seg.title = name;
     seg.dataset.idx = i;
     seg.addEventListener('click', e => {
@@ -1680,16 +1713,38 @@ function buildAddrBar() {
 
   const fileSeg = document.createElement('span');
   fileSeg.className = 'addr-seg addr-file';
-  fileSeg.textContent = truncName(selectedFileName);
+  fileSeg.textContent = selectedFileName;
   fileSeg.title = selectedFileName;
   fileSeg.addEventListener('click', e => {
     e.stopPropagation();
     onFileSegClick(fileSeg);
   });
   addrBarInner.appendChild(fileSeg);
+
+  // Check overflow: if content is wider than container, apply truncation
+  requestAnimationFrame(() => {
+    const barW = addrBar.clientWidth;
+    const innerW = addrBarInner.scrollWidth;
+    if (innerW > barW) {
+      // Rebuild with truncation
+      addrBar.classList.add('overflow');
+      const segs = addrBarInner.querySelectorAll('.addr-seg');
+      segs.forEach(s => {
+        const full = s.title;
+        s.textContent = truncName(full);
+      });
+    }
+  });
 }
 
 function showAddrDropdown(anchor, items, currentName, onSelect) {
+  // Toggle: if clicking the same anchor, close
+  if (addrDropdown.style.display === 'block' && addrActiveAnchor === anchor) {
+    addrDropdown.style.display = 'none';
+    addrActiveAnchor = null;
+    return;
+  }
+  addrActiveAnchor = anchor;
   const rect = anchor.getBoundingClientRect();
   addrDropdown.innerHTML = items.map(name => {
     const isCurrent = name === currentName;
@@ -1711,6 +1766,7 @@ function showAddrDropdown(anchor, items, currentName, onSelect) {
 function hideAddrDropdown(e) {
   if (e && addrDropdown.contains(e.target)) return;
   addrDropdown.style.display = 'none';
+  addrActiveAnchor = null;
 }
 document.addEventListener('mousedown', e => {
   if (!addrDropdown.contains(e.target)) hideAddrDropdown();
