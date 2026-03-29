@@ -1004,24 +1004,30 @@ function findHasCcmd(path) {
 
 // --- Layout & drawing ---
 
-function countLeaves(node) {
+function countLeaves(node, pathPrefix) {
+  const p = pathPrefix ? pathPrefix + '/' + node.name : node.name;
   if (!node.children || node.children.length === 0) return 1;
-  return node.children.reduce((s, c) => s + countLeaves(c), 0);
+  if (collapsed.has(p)) return 1;
+  return node.children.reduce((s, c) => s + countLeaves(c, p), 0);
 }
 
 function layout() {
+  // Apply pinned collapsed
+  pinnedCollapsed.forEach(p => collapsed.add(p));
+
   nodes.length = 0;
   if (!treeData) return;
   nodes.push({ x: 0, y: 0, r: 10, name: treeData.name, path: treeData.name, depth: 0, isLeaf: false, parent: null });
 
   function assignPositions(node, depth, angleStart, angleEnd, parentIdx, pathPrefix) {
     if (!node.children || node.children.length === 0) return;
+    if (collapsed.has(pathPrefix)) return;
     const radius = depth * layerSpacing;
-    const totalChildLeaves = node.children.reduce((s, c) => s + countLeaves(c), 0);
+    const totalChildLeaves = node.children.reduce((s, c) => s + countLeaves(c, pathPrefix), 0);
     let currentAngle = angleStart;
 
     node.children.forEach(child => {
-      const childLeaves = countLeaves(child);
+      const childLeaves = countLeaves(child, pathPrefix);
       const childAngleSpan = (childLeaves / totalChildLeaves) * (angleEnd - angleStart);
       const midAngle = currentAngle + childAngleSpan / 2;
       const isLeaf = !child.children || child.children.length === 0;
@@ -1046,16 +1052,12 @@ function layout() {
   }
 
   assignPositions(treeData, 1, 0, Math.PI * 2, 0, treeData.name);
-
-  nodes.forEach((n, i) => {
-    if (!n.isLeaf && pinnedCollapsed.has(n.path)) collapsed.add(i);
-  });
 }
 
 function isVisible(idx) {
   let cur = nodes[idx].parent;
   while (cur !== null) {
-    if (collapsed.has(cur)) return false;
+    if (collapsed.has(nodes[cur].path)) return false;
     cur = nodes[cur].parent;
   }
   return true;
@@ -1176,7 +1178,7 @@ function draw() {
     }
 
     // Collapsed indicator
-    if (collapsed.has(i)) {
+    if (collapsed.has(node.path)) {
       ctx.save();
       ctx.font = `bold ${Math.max(8, 10 * zoom)}px "Cascadia Code", monospace`;
       ctx.fillStyle = node.depth === 0 ? '#b35f1a' : node.isLeaf ? '#3d8b45' : '#2a6cbf';
@@ -1403,8 +1405,9 @@ canvas.addEventListener('mousedown', e => {
     const hitR = n.r + 4 / zoom;
     if (dx * dx + dy * dy < hitR * hitR) {
       if (!n.isLeaf) {
-        if (collapsed.has(i)) collapsed.delete(i);
-        else collapsed.add(i);
+        if (collapsed.has(n.path)) collapsed.delete(n.path);
+        else collapsed.add(n.path);
+        layout();
         draw();
       }
       break;
@@ -1876,8 +1879,9 @@ document.addEventListener('keydown', e => {
     const level = parseInt(e.key);
     collapsed.clear();
     nodes.forEach((n, i) => {
-      if (!n.isLeaf && n.depth >= level) collapsed.add(i);
+      if (!n.isLeaf && n.depth >= level) collapsed.add(n.path);
     });
+    layout();
     draw();
     showStatus('Level ' + level);
   }
