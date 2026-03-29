@@ -20,12 +20,14 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 - Click any node to view its CLAUDE.md; right-click to browse all .md files
 - Side panel Markdown viewer with resizing, font scaling, and left/right positioning
 - Command palette (`:`) with tab auto-completion, ghost text, and file finder
-- Find files by node name (`find hub`) or browse children (`find hub/`)
+- Find files by full path (`find courses/bsp/`) or node name (`find hub`); search pierces collapsed subtrees
+- Pin nodes as "collapse by default" via right-click; set a "current focus" with gold highlight
+- Folder handle persisted in IndexedDB — file access survives browser refresh
 - Multi-root support: open multiple roots in separate tabs, each with independent state
 - Root history (up to 5 recent roots) with quick switch via `goto` command
 - Jump list navigation (Ctrl+O / Ctrl+I) across viewed files
 - Vim-style navigation (h/j/k/l to pan, i/o to zoom)
-- Expand/collapse subtrees by depth level (1-7) or per-node (middle-click)
+- Expand/collapse subtrees by depth level (1-7) or per-node (middle-click); collapsed nodes release angular space to neighbors
 - All view and panel settings persisted per-root in localStorage across sessions
 
 ## Usage
@@ -79,7 +81,7 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 
 | Command | Action |
 |---------|--------|
-| find \<query\> | Search nodes and .md files |
+| find \<query\> | Search by name or full path (e.g. `find courses/bsp/`) |
 | goto \<query\> | Switch to a different root from history |
 | open | Open a new root folder |
 | clear | Reset current root and return to selection |

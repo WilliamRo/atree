@@ -614,6 +614,7 @@ function loadView() {
 loadView();
 let dragging = false, dragStartX, dragStartY, camStartX, camStartY;
 const nodes = [];
+const allNodes = [];
 const collapsed = new Set();
 const layerSpacing = 140;
 
@@ -839,7 +840,7 @@ async function scanAndRender() {
     localStorage.setItem(nsKey('hub-tree-data'), JSON.stringify(treeData));
     promptEl.style.display = 'none';
     if (isFirstScan) { camX = 0; camY = 0; zoom = 1; }
-    layout();
+    layout(true);
     draw();
     showStatus('Tree updated');
   } catch (e) {
@@ -1011,9 +1012,8 @@ function countLeaves(node, pathPrefix) {
   return node.children.reduce((s, c) => s + countLeaves(c, p), 0);
 }
 
-function layout() {
-  // Apply pinned collapsed
-  pinnedCollapsed.forEach(p => collapsed.add(p));
+function layout(applyPinned) {
+  if (applyPinned) pinnedCollapsed.forEach(p => collapsed.add(p));
 
   nodes.length = 0;
   if (!treeData) return;
@@ -1052,6 +1052,16 @@ function layout() {
   }
 
   assignPositions(treeData, 1, 0, Math.PI * 2, 0, treeData.name);
+
+  // Build full node list for search (ignores collapse)
+  allNodes.length = 0;
+  function buildAll(node, pathPrefix) {
+    const p = pathPrefix ? pathPrefix + '/' + node.name : node.name;
+    const isLeaf = !node.children || node.children.length === 0;
+    allNodes.push({ name: node.name, path: p, isLeaf });
+    if (node.children) node.children.forEach(c => buildAll(c, p));
+  }
+  buildAll(treeData, '');
 }
 
 function isVisible(idx) {
@@ -1253,7 +1263,7 @@ if (cached) {
   try {
     treeData = JSON.parse(cached);
     promptEl.style.display = 'none';
-    layout();
+    layout(true);
     draw();
   } catch (e) {
     localStorage.removeItem(nsKey('hub-tree-data'));
@@ -1495,7 +1505,7 @@ const cmdDropdown = document.getElementById('cmd-dropdown');
 let cmdBarOpen = false;
 let dropdownIdx = -1;
 let dropdownItems = [];
-const cmdList = ['clear', 'find', 'goto', 'help', 'manual', 'man', 'open'];
+const cmdList = ['find', 'clear', 'goto', 'help', 'manual', 'man', 'open'];
 
 function updateGhost() {
   const val = cmdInput.value.toLowerCase();
@@ -1518,7 +1528,7 @@ function highlightMatch(text, query) {
 }
 
 function collectSearchableNodes() {
-  return nodes;
+  return allNodes;
 }
 
 let gotoMode = false;
@@ -1565,18 +1575,14 @@ async function updateDropdown() {
   const findMatch = val.match(/^find\s+(.+)/);
   if (!findMatch) { cmdDropdown.style.display = 'none'; dropdownItems = []; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
   const rawQuery = findMatch[1].toLowerCase();
-  const slashIdx = rawQuery.indexOf('/');
-  const browseMode = slashIdx >= 0;
-  const parentTerm = browseMode ? rawQuery.slice(0, slashIdx) : rawQuery;
-  const childFilter = browseMode ? rawQuery.slice(slashIdx + 1) : '';
-  if (!parentTerm) { cmdDropdown.style.display = 'none'; dropdownItems = []; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
-
+  const browseMode = rawQuery.endsWith('/');
   const ccmdNodes = collectSearchableNodes();
-  const matchingNodes = ccmdNodes.filter(n => n.name.toLowerCase().includes(parentTerm));
-  if (matchingNodes.length === 0) { cmdDropdown.style.display = 'none'; dropdownItems = []; dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
 
   dropdownItems = [];
   if (browseMode) {
+    // Path browse: find nodes whose path ends with the query prefix, show children
+    const prefix = rawQuery.slice(0, -1); // remove trailing /
+    const matchingNodes = ccmdNodes.filter(n => n.path.toLowerCase().includes(prefix));
     for (const n of matchingNodes) {
       const children = ccmdNodes.filter(c => {
         const parts = c.path.split('/');
@@ -1584,18 +1590,36 @@ async function updateDropdown() {
         return parts.join('/') === n.path;
       });
       for (const c of children) {
-        if (childFilter && !c.name.toLowerCase().includes(childFilter)) continue;
-        const cMdFiles = await listMdFiles(c.path);
-        if (cMdFiles.length === 0) continue;
-        dropdownItems.push({ name: c.name, path: c.path, hlTerm: childFilter || parentTerm, isNode: true });
+        dropdownItems.push({ name: c.name, path: c.path, hlTerm: '', isNode: true });
       }
     }
   } else {
-    for (const n of matchingNodes) {
-      const mdFiles = await listMdFiles(n.path);
-      const sorted = mdFiles.filter(f => f === 'CLAUDE.md').concat(mdFiles.filter(f => f !== 'CLAUDE.md'));
-      for (const f of sorted) {
-        dropdownItems.push({ name: f, path: n.path, hlTerm: parentTerm });
+    // Check if query contains / for path-scoped search (e.g., "courses/bsp/d")
+    const lastSlash = rawQuery.lastIndexOf('/');
+    if (lastSlash >= 0) {
+      const pathPart = rawQuery.slice(0, lastSlash);
+      const childFilter = rawQuery.slice(lastSlash + 1);
+      const matchingNodes = ccmdNodes.filter(n => n.path.toLowerCase().includes(pathPart));
+      for (const n of matchingNodes) {
+        const children = ccmdNodes.filter(c => {
+          const parts = c.path.split('/');
+          parts.pop();
+          return parts.join('/') === n.path;
+        });
+        for (const c of children) {
+          if (childFilter && !c.name.toLowerCase().includes(childFilter)) continue;
+          dropdownItems.push({ name: c.name, path: c.path, hlTerm: childFilter, isNode: true });
+        }
+      }
+    } else {
+      // Simple name/path search
+      const matchingNodes = ccmdNodes.filter(n => n.path.toLowerCase().includes(rawQuery));
+      for (const n of matchingNodes) {
+        const mdFiles = await listMdFiles(n.path);
+        const sorted = mdFiles.filter(f => f === 'CLAUDE.md').concat(mdFiles.filter(f => f !== 'CLAUDE.md'));
+        for (const f of sorted) {
+          dropdownItems.push({ name: f, path: n.path, hlTerm: rawQuery });
+        }
       }
     }
   }
@@ -1648,6 +1672,13 @@ async function selectDropdownItem(idx) {
     } catch (e) { showStatus('Cannot access folder'); }
     return;
   }
+  // Restore collapsed state before expanding only the needed path
+  if (savedCollapsed) {
+    collapsed.clear();
+    savedCollapsed.forEach(p => collapsed.add(p));
+    savedCollapsed = null;
+    layout();
+  }
   closeCmdBar(false);
   const fileName = f.isNode ? 'CLAUDE.md' : f.name;
   const content = await readMdFile(f.path, fileName);
@@ -1673,8 +1704,19 @@ function getVisibleCenter() {
 }
 
 function centerOnNode(path) {
-  const n = nodes.find(nd => nd.path === path);
-  if (!n) return;
+  // Auto-expand collapsed ancestors if needed
+  let n = nodes.find(nd => nd.path === path);
+  if (!n) {
+    const parts = path.split('/');
+    let ancestor = parts[0];
+    for (let i = 1; i < parts.length; i++) {
+      if (collapsed.has(ancestor)) collapsed.delete(ancestor);
+      ancestor += '/' + parts[i];
+    }
+    layout();
+    n = nodes.find(nd => nd.path === path);
+    if (!n) return;
+  }
   const vc = getVisibleCenter();
   camX = (vc.x - W / 2) / zoom - n.x;
   camY = (vc.y - H / 2) / zoom - n.y;
@@ -1683,9 +1725,11 @@ function centerOnNode(path) {
 }
 
 let savedCam = null;
+let savedCollapsed = null;
 
 function openCmdBar() {
   savedCam = { camX, camY, zoom };
+  savedCollapsed = new Set(collapsed);
   cmdBar.style.display = 'block';
   cmdInput.value = '';
   cmdShadow.innerHTML = '<span class="typed"></span><span class="ghost">find</span>';
@@ -1709,10 +1753,16 @@ function closeCmdBar(restoreView) {
   cmdBarOpen = false;
   if (restoreView && savedCam) {
     camX = savedCam.camX; camY = savedCam.camY; zoom = savedCam.zoom;
+    if (savedCollapsed) {
+      collapsed.clear();
+      savedCollapsed.forEach(p => collapsed.add(p));
+      layout();
+    }
     draw();
     saveView();
   }
   savedCam = null;
+  savedCollapsed = null;
   closingCmdBar = false;
 }
 cmdInput.addEventListener('blur', () => { closeCmdBar(true); });
