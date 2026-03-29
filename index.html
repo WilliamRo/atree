@@ -289,7 +289,6 @@
     display: flex;
     align-items: center;
     white-space: nowrap;
-    max-width: 100%;
   }
   #addr-bar.overflow {
     direction: rtl;
@@ -342,8 +341,21 @@
   #addr-dropdown .addr-dd-item.active {
     background: #21262d;
   }
-  #addr-dropdown .addr-dd-item.current {
-    color: #f0883e;
+  #addr-dropdown .addr-dd-item.current-root { color: orange; }
+  #addr-dropdown .addr-dd-item.current-branch { color: #58a6ff; }
+  #addr-dropdown .addr-dd-item.current-leaf { color: #4ecf6a; }
+  #addr-dropdown .addr-dd-item.current-file { color: #c9d1d9; font-weight: bold; }
+  #addr-dropdown .addr-dd-item.disabled {
+    color: #484f58;
+    cursor: default;
+  }
+  #addr-dropdown .addr-dd-item.disabled:hover { background: none; }
+  #addr-dropdown .addr-dd-sep {
+    padding: 2px 12px;
+    font-size: 10px;
+    color: #484f58;
+    border-top: 1px solid #21262d;
+    margin-top: 2px;
   }
   .tb-group { display: flex; align-items: center; gap: 2px; }
   .tb-group button {
@@ -1626,7 +1638,7 @@ const addrBarInner = document.getElementById('addr-bar-inner');
 const addrDropdown = document.getElementById('addr-dropdown');
 
 function truncName(name, max) {
-  if (!max) max = 10;
+  if (!max) max = 16;
   if (name.length <= max) return name;
   // For .md files, keep .md suffix
   if (name.endsWith('.md')) {
@@ -1647,7 +1659,8 @@ function isLeafPath(path) {
   return !node.children || node.children.length === 0;
 }
 
-let addrActiveAnchor = null;
+let addrActiveId = null;
+let addrCloseTime = 0;
 
 function getSiblingNodes(path) {
   if (!treeData) return [];
@@ -1672,6 +1685,35 @@ function getChildNodes(path) {
     if (!node) return [];
   }
   return (node.children || []).map(c => c.name);
+}
+
+function nodeHasCcmd(path) {
+  if (!treeData) return false;
+  let node = treeData;
+  const parts = path.split('/');
+  for (let i = 1; i < parts.length; i++) {
+    if (!node.children) return false;
+    node = node.children.find(c => c.name === parts[i]);
+    if (!node) return false;
+  }
+  return true;
+}
+
+// DFS to find the first node (self or descendant) that directly contains md files
+async function findFirstMdNode(path) {
+  const mds = await listMdFiles(path);
+  if (mds.length > 0) {
+    const first = mds.includes('CLAUDE.md') ? 'CLAUDE.md' : mds[0];
+    return { path, file: first };
+  }
+  const children = getChildNodes(path);
+  for (const cn of children) {
+    const childPath = path + '/' + cn;
+    if (!nodeHasCcmd(childPath)) continue;
+    const result = await findFirstMdNode(childPath);
+    if (result) return result;
+  }
+  return null;
 }
 
 function buildAddrBar() {
@@ -1721,43 +1763,51 @@ function buildAddrBar() {
   });
   addrBarInner.appendChild(fileSeg);
 
-  // Check overflow: if content is wider than container, apply truncation
+  // Check overflow: first try truncation, then rtl if still overflowing
   requestAnimationFrame(() => {
+    // Temporarily remove overflow:hidden to measure true width
+    addrBar.style.overflow = 'visible';
     const barW = addrBar.clientWidth;
-    const innerW = addrBarInner.scrollWidth;
-    if (innerW > barW) {
-      // Rebuild with truncation
-      addrBar.classList.add('overflow');
+    if (addrBarInner.scrollWidth > barW) {
+      // Step 1: truncate long names
       const segs = addrBarInner.querySelectorAll('.addr-seg');
-      segs.forEach(s => {
-        const full = s.title;
-        s.textContent = truncName(full);
-      });
+      segs.forEach(s => { s.textContent = truncName(s.title); });
     }
+    if (addrBarInner.scrollWidth > barW) {
+      // Step 2: still overflowing after truncation, right-align
+      addrBar.classList.add('overflow');
+    }
+    addrBar.style.overflow = '';
   });
 }
 
-function showAddrDropdown(anchor, items, currentName, onSelect) {
-  // Toggle: if clicking the same anchor, close
-  if (addrDropdown.style.display === 'block' && addrActiveAnchor === anchor) {
+// items: [{ name, cls, disabled }] where cls is CSS class for color
+function showAddrDropdown(anchorId, anchor, items, onSelect) {
+  // Toggle: if just closed this same anchor, don't reopen
+  if (anchorId === addrActiveId) {
     addrDropdown.style.display = 'none';
-    addrActiveAnchor = null;
+    addrActiveId = null;
     return;
   }
-  addrActiveAnchor = anchor;
+  if (Date.now() - addrCloseTime < 200 && addrDropdown._lastId === anchorId) {
+    return;
+  }
+  addrActiveId = anchorId;
   const rect = anchor.getBoundingClientRect();
-  addrDropdown.innerHTML = items.map(name => {
-    const isCurrent = name === currentName;
-    return '<div class="addr-dd-item' + (isCurrent ? ' current' : '') + '" data-name="' +
-      name.replace(/"/g, '&quot;') + '">' + truncName(name, 30) + '</div>';
+  addrDropdown.innerHTML = items.map(it => {
+    if (it.isSep) return '<div class="addr-dd-sep">' + it.label + '</div>';
+    const cls = 'addr-dd-item' + (it.cls ? ' ' + it.cls : '') + (it.disabled ? ' disabled' : '');
+    return '<div class="' + cls + '" data-name="' +
+      it.name.replace(/"/g, '&quot;') + '">' + truncName(it.name, 30) + '</div>';
   }).join('');
   addrDropdown.style.left = rect.left + 'px';
   addrDropdown.style.top = (rect.bottom + 2) + 'px';
   addrDropdown.style.display = 'block';
-  addrDropdown.querySelectorAll('.addr-dd-item').forEach(el => {
+  addrDropdown.querySelectorAll('.addr-dd-item:not(.disabled)').forEach(el => {
     el.addEventListener('mousedown', e => {
       e.preventDefault();
       addrDropdown.style.display = 'none';
+      addrActiveId = null;
       onSelect(el.dataset.name);
     });
   });
@@ -1765,20 +1815,28 @@ function showAddrDropdown(anchor, items, currentName, onSelect) {
 
 function hideAddrDropdown(e) {
   if (e && addrDropdown.contains(e.target)) return;
+  if (addrDropdown.style.display === 'block') {
+    addrDropdown._lastId = addrActiveId;
+    addrCloseTime = Date.now();
+  }
   addrDropdown.style.display = 'none';
-  addrActiveAnchor = null;
+  addrActiveId = null;
 }
 document.addEventListener('mousedown', e => {
   if (!addrDropdown.contains(e.target)) hideAddrDropdown();
 });
 
 async function onAddrSegClick(seg, idx, parts) {
+  const anchorId = 'seg-' + idx;
   if (idx === 0) {
     // Root segment: show recent roots
     const history = await loadHistory();
     if (history.length === 0) return;
-    const items = history.map(h => h.name);
-    showAddrDropdown(seg, items, activeRoot, async (name) => {
+    const items = history.map(h => ({
+      name: h.name,
+      cls: h.name === activeRoot ? 'current-root' : ''
+    }));
+    showAddrDropdown(anchorId, seg, items, async (name) => {
       const entry = history.find(h => h.name === name);
       if (!entry || !entry.handle) return;
       try {
@@ -1799,24 +1857,36 @@ async function onAddrSegClick(seg, idx, parts) {
   }
   // Non-root node: show sibling nodes
   const path = parts.slice(0, idx + 1).join('/');
+  const parentPath = parts.slice(0, idx).join('/');
   const siblings = getSiblingNodes(path);
   if (siblings.length === 0) return;
-  showAddrDropdown(seg, siblings, parts[idx], async (name) => {
-    const parentPath = parts.slice(0, idx).join('/');
+  const items = siblings.map(name => {
+    const sibPath = parentPath + '/' + name;
+    const isCurrent = name === parts[idx];
+    const leaf = isLeafPath(sibPath);
+    return {
+      name,
+      cls: isCurrent ? (leaf ? 'current-leaf' : 'current-branch') : ''
+    };
+  });
+  showAddrDropdown(anchorId, seg, items, async (name) => {
     const newPath = parentPath + '/' + name;
-    const content = await readMdFile(newPath, 'CLAUDE.md');
-    if (content !== null) {
-      selectedNodePath = newPath;
-      selectedFileName = 'CLAUDE.md';
-      ccmdTitle.textContent = newPath + '/CLAUDE.md';
-      ccmdBody.innerHTML = renderMarkdown(content);
-      ccmdPanel.style.display = 'flex';
-      jumpPush(newPath, 'CLAUDE.md');
-      saveMdv();
-      centerOnNode(newPath);
-      buildAddrBar();
+    const found = await findFirstMdNode(newPath);
+    if (found) {
+      const content = await readMdFile(found.path, found.file);
+      if (content !== null) {
+        selectedNodePath = found.path;
+        selectedFileName = found.file;
+        ccmdTitle.textContent = found.path + '/' + found.file;
+        ccmdBody.innerHTML = renderMarkdown(content);
+        ccmdPanel.style.display = 'flex';
+        jumpPush(found.path, found.file);
+        saveMdv();
+        centerOnNode(found.path);
+        buildAddrBar();
+      }
     } else {
-      showStatus('No CLAUDE.md in ' + name);
+      showStatus('No .md files in ' + name);
     }
   });
 }
@@ -1824,8 +1894,56 @@ async function onAddrSegClick(seg, idx, parts) {
 async function onFileSegClick(seg) {
   if (!selectedNodePath) return;
   const mdFiles = await listMdFiles(selectedNodePath);
-  if (mdFiles.length === 0) return;
-  showAddrDropdown(seg, mdFiles, selectedFileName, async (name) => {
+
+  // Build file items: CLAUDE.md first
+  const sorted = mdFiles.filter(f => f === 'CLAUDE.md').concat(mdFiles.filter(f => f !== 'CLAUDE.md'));
+  const items = sorted.map(f => ({
+    name: f,
+    cls: f === selectedFileName ? 'current-file' : ''
+  }));
+
+  // Add child nodes that contain md files (directly or in descendants)
+  const childNames = getChildNodes(selectedNodePath);
+  const leafChildren = [];
+  for (const cn of childNames) {
+    const childPath = selectedNodePath + '/' + cn;
+    if (!nodeHasCcmd(childPath)) continue;
+    const childMds = await listMdFiles(childPath);
+    const firstMd = childMds.includes('CLAUDE.md') ? 'CLAUDE.md' : (childMds.length > 0 ? childMds[0] : 'CLAUDE.md');
+    leafChildren.push({ name: cn, path: childPath, firstMd });
+  }
+
+  if (items.length === 0 && leafChildren.length === 0) return;
+
+  if (leafChildren.length > 0) {
+    items.push({ isSep: true, label: 'children' });
+    for (const lc of leafChildren) {
+      items.push({ name: lc.name, cls: '', isLeafChild: true, path: lc.path, firstMd: lc.firstMd });
+    }
+  }
+
+  showAddrDropdown('seg-file', seg, items, async (name) => {
+    // Check if it's a child node
+    const lc = leafChildren.find(c => c.name === name);
+    if (lc) {
+      const found = await findFirstMdNode(lc.path);
+      if (found) {
+        const content = await readMdFile(found.path, found.file);
+        if (content !== null) {
+          selectedNodePath = found.path;
+          selectedFileName = found.file;
+          ccmdTitle.textContent = found.path + '/' + found.file;
+          ccmdBody.innerHTML = renderMarkdown(content);
+          ccmdPanel.style.display = 'flex';
+          jumpPush(found.path, found.file);
+          saveMdv();
+          centerOnNode(found.path);
+          buildAddrBar();
+        }
+      }
+      return;
+    }
+    // Regular md file
     const content = await readMdFile(selectedNodePath, name);
     if (content !== null) {
       selectedFileName = name;
