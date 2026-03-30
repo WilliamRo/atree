@@ -2445,8 +2445,8 @@ cmdInput.addEventListener('keydown', e => {
       return;
     }
     const cmd = cmdInput.value.trim().toLowerCase();
-    closeCmdBar(true);
     if (cmd === 'clear') {
+      closeCmdBar(false);
       const root = dirHandle ? dirHandle.name : 'current root';
       if (!confirm('Clear all saved state for "' + root + '" and reload?')) return;
       localStorage.removeItem(nsKey('hub-tree-data'));
@@ -2457,7 +2457,10 @@ cmdInput.addEventListener('keydown', e => {
       localStorage.removeItem(nsKey('hub-tree-pinned-collapsed'));
       sessionStorage.removeItem(SESSION_ROOT_KEY);
       location.reload();
-    } else if (cmd === 'manual' || cmd === 'man' || cmd === 'help') {
+      return;
+    }
+    closeCmdBar(true);
+    if (cmd === 'manual' || cmd === 'man' || cmd === 'help') {
       helpPanel.style.display = helpPanel.style.display === 'block' ? 'none' : 'block';
       hintEl.style.display = helpPanel.style.display === 'block' ? 'none' : 'block';
     } else if (cmd === 'open') {
