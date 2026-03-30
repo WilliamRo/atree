@@ -1731,7 +1731,7 @@ function updateToolbar() {
   tbFontSize.textContent = ccmdFontSize;
   buildAddrBar();
 }
-updateToolbar();
+try { updateToolbar(); } catch (e) {}
 // Auto-update toolbar when panel becomes visible
 new MutationObserver(() => {
   if (ccmdPanel.style.display === 'flex') updateToolbar();
@@ -2388,6 +2388,14 @@ function closeCmdBar(restoreView) {
 cmdInput.addEventListener('blur', () => { closeCmdBar(true); });
 cmdInput.addEventListener('input', () => { updateGhost(); updateDropdown(); });
 
+// Fail-safe: command palette must always be toggleable
+document.addEventListener('keydown', e => {
+  if (e.key === ':' && !cmdBarOpen && document.activeElement === document.body) {
+    e.preventDefault();
+    openCmdBar();
+  }
+}, true);
+
 let tabIdx = -1;
 let tabMatches = [];
 cmdInput.addEventListener('keydown', e => {
@@ -2517,7 +2525,7 @@ document.addEventListener('keydown', e => {
     openCmdBar();
     return;
   }
-  if (e.key === 'f') {
+  if (e.key === 'f' && !e.ctrlKey) {
     e.preventDefault();
     openCmdBar();
     cmdInput.value = 'find ';
