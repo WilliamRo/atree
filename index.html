@@ -437,6 +437,8 @@
   #ccmd-body th { background: #161b22; color: #58a6ff; }
   #ccmd-body a { color: #58a6ff; text-decoration: none; }
   #ccmd-body a:hover { text-decoration: underline; }
+  #ccmd-body a.hub-link { color: #e3b341; }
+  #ccmd-body a.hub-link:hover { color: #f0c85a; }
   #ccmd-body blockquote {
     border-left: 3px solid #30363d;
     padding-left: 12px;
@@ -444,6 +446,77 @@
     color: #6e7681;
   }
   #ccmd-empty { color: #484f58; font-style: italic; }
+  #color-picker {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(13, 17, 23, 0.96);
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 14px;
+    z-index: 50;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+  }
+  #cp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    color: #c9d1d9;
+    font-size: 13px;
+  }
+  #cp-close {
+    background: none;
+    border: none;
+    color: #484f58;
+    font-size: 16px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  #cp-close:hover { color: #c9d1d9; }
+  #cp-sv, #cp-hue {
+    display: block;
+    border-radius: 4px;
+    cursor: crosshair;
+  }
+  #cp-hue { margin-top: 8px; }
+  #cp-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  #cp-preview {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    border: 1px solid #30363d;
+  }
+  #cp-hex {
+    color: #c9d1d9;
+    font-size: 14px;
+    flex: 1;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: inherit;
+    outline: none;
+    width: 90px;
+  }
+  #cp-hex:focus { border-color: #58a6ff; }
+  #cp-copy {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #58a6ff;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 12px;
+    cursor: pointer;
+  }
+  #cp-copy:hover { background: #30363d; }
   #ctx-menu {
     position: fixed;
     background: rgba(13, 17, 23, 0.96);
@@ -507,6 +580,7 @@
   <div class="group">Global</div>
   <div><span class="key">:</span>summon command palette</div>
   <div><span class="key">?</span>toggle help panel</div>
+  <div><span class="key">y</span>copy node path to clipboard</div>
   <div><span class="key">R</span>rescan tree from <span id="help-root"></span></div>
   <div class="storage" id="storageInfo"></div>
 </div>
@@ -533,6 +607,19 @@
   </div>
   <div id="addr-dropdown"></div>
   <div id="ccmd-body"></div>
+</div>
+<div id="color-picker" style="display:none;">
+  <div id="cp-header">
+    <span>Palette</span>
+    <button id="cp-close">&times;</button>
+  </div>
+  <canvas id="cp-sv" width="256" height="256"></canvas>
+  <canvas id="cp-hue" width="256" height="20"></canvas>
+  <div id="cp-footer">
+    <div id="cp-preview"></div>
+    <input id="cp-hex" value="#ffffff" spellcheck="false">
+    <button id="cp-copy">Copy</button>
+  </div>
 </div>
 <script>
 const SESSION_ROOT_KEY = 'hub-tree-active-root';
@@ -742,6 +829,7 @@ function loadView() {
 }
 loadView();
 let dragging = false, dragStartX, dragStartY, camStartX, camStartY;
+let hoveredPath = null;
 const nodes = [];
 const allNodes = [];
 const collapsed = new Set();
@@ -892,6 +980,7 @@ function inlineMd(s) {
   s = escHtml(s);
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/`(.+?)`/g, '<code>$1</code>');
+  s = s.replace(/\[([^\]]+)\]\((hub\/[^)]+)\)/g, '<a href="#" data-hub-link="$2" class="hub-link" title="$2">$1</a>');
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   return s;
 }
@@ -1481,11 +1570,13 @@ canvas.addEventListener('mousemove', e => {
     if (dx * dx + dy * dy < hitR * hitR) { found = n; break; }
   }
   if (found) {
+    hoveredPath = found.path;
     tooltip.style.display = 'block';
     tooltip.style.left = (e.clientX + 14) + 'px';
     tooltip.style.top = (e.clientY - 8) + 'px';
     tooltip.textContent = found.path;
   } else {
+    hoveredPath = null;
     tooltip.style.display = 'none';
   }
 });
@@ -1597,6 +1688,32 @@ ccmdPanel.addEventListener('contextmenu', e => {
 // Double-click mdv body to center on the current node
 ccmdBody.addEventListener('dblclick', () => {
   if (selectedNodePath) centerOnNode(selectedNodePath);
+});
+
+// Hub cross-node links: hub/<path>/<file.md> → navigate in mdv
+ccmdBody.addEventListener('click', async e => {
+  const link = e.target.closest('a[data-hub-link]');
+  if (!link) return;
+  e.preventDefault();
+  const hubPath = link.dataset.hubLink; // e.g. "hub/kb/knowhow/harness/CLAUDE.md"
+  const parts = hubPath.split('/');
+  // Remove "hub" prefix (= root name may differ), extract file name
+  const fileName = parts[parts.length - 1];
+  // Build node path: root + middle parts (exclude "hub" prefix and file name)
+  const rootName = treeData ? treeData.name : '';
+  const nodePath = rootName + '/' + parts.slice(1, -1).join('/');
+  const content = await readMdFile(nodePath, fileName);
+  if (content !== null) {
+    selectedNodePath = nodePath;
+    selectedFileName = fileName;
+    ccmdTitle.textContent = nodePath + '/' + fileName;
+    ccmdBody.innerHTML = renderMarkdown(content);
+    jumpPush(nodePath, fileName);
+    saveMdv();
+    centerOnNode(nodePath);
+  } else {
+    showStatus('File not found: ' + hubPath);
+  }
 });
 
 // --- Toolbar buttons ---
@@ -2005,7 +2122,7 @@ const cmdDropdown = document.getElementById('cmd-dropdown');
 let cmdBarOpen = false;
 let dropdownIdx = -1;
 let dropdownItems = [];
-const cmdList = ['find', 'clear', 'goto', 'help', 'manual', 'man', 'open'];
+const cmdList = ['find', 'clear', 'goto', 'help', 'manual', 'man', 'open', 'palette'];
 
 function updateGhost() {
   const val = cmdInput.value.toLowerCase();
@@ -2328,6 +2445,8 @@ cmdInput.addEventListener('keydown', e => {
     const cmd = cmdInput.value.trim().toLowerCase();
     closeCmdBar(true);
     if (cmd === 'clear') {
+      const root = dirHandle ? dirHandle.name : 'current root';
+      if (!confirm('Clear all saved state for "' + root + '" and reload?')) return;
       localStorage.removeItem(nsKey('hub-tree-data'));
       localStorage.removeItem(nsKey('hub-tree-focus'));
       localStorage.removeItem(nsKey('hub-tree-mdv'));
@@ -2341,6 +2460,8 @@ cmdInput.addEventListener('keydown', e => {
       hintEl.style.display = helpPanel.style.display === 'block' ? 'none' : 'block';
     } else if (cmd === 'open') {
       pickAndScan();
+    } else if (cmd === 'palette') {
+      openColorPicker();
     } else if (cmd === 'find' || cmd === '' || cmd === 'goto') {
       // no query — do nothing
     } else if (cmd.startsWith('goto ')) {
@@ -2355,7 +2476,12 @@ cmdInput.addEventListener('keydown', e => {
   }
 });
 
+function cpOpen() { return cpEl.style.display === 'block'; }
 document.addEventListener('keydown', e => {
+  if (cpOpen()) {
+    if (e.key === 'Escape') { cpEl.style.display = 'none'; }
+    return;
+  }
   if (cmdBarOpen) return;
   if (e.key === 'Escape') {
     ctxMenu.style.display = 'none';
@@ -2452,6 +2578,10 @@ document.addEventListener('keydown', e => {
   }
   if (e.key === 'r') { reloadCcmd(); }
   if (e.key === 'R') { rescan(); }
+  if (e.key === 'y') {
+    const p = hoveredPath || selectedNodePath;
+    if (p) { navigator.clipboard.writeText(p).then(() => showStatus('Copied: ' + p)); }
+  }
   if (e.key === 'ArrowLeft' && e.altKey && ccmdPanel.style.display === 'flex') {
     panelSide = 'left';
     ccmdPanel.style.left = '0';
@@ -2490,6 +2620,118 @@ document.addEventListener('keydown', e => {
     hintEl.style.display = show ? 'none' : 'block';
   }
 });
+
+// --- Color Picker ---
+const cpEl = document.getElementById('color-picker');
+const cpSv = document.getElementById('cp-sv');
+const cpHue = document.getElementById('cp-hue');
+const cpPreview = document.getElementById('cp-preview');
+const cpHex = document.getElementById('cp-hex');
+const cpSvCtx = cpSv.getContext('2d');
+const cpHueCtx = cpHue.getContext('2d');
+let cpH = 0, cpS = 1, cpV = 1;
+
+function hsvToRgb(h, s, v) {
+  let r, g, b;
+  const i = Math.floor(h / 60) % 6;
+  const f = h / 60 - Math.floor(h / 60);
+  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  switch (i) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map(c => c.toString(16).padStart(2, '0')).join('');
+}
+
+function drawHueBar() {
+  const w = cpHue.width, h = cpHue.height;
+  for (let x = 0; x < w; x++) {
+    const [r, g, b] = hsvToRgb((x / w) * 360, 1, 1);
+    cpHueCtx.fillStyle = rgbToHex(r, g, b);
+    cpHueCtx.fillRect(x, 0, 1, h);
+  }
+}
+
+function drawSvSquare() {
+  const w = cpSv.width, h = cpSv.height;
+  const img = cpSvCtx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const s = x / w, v = 1 - y / h;
+      const [r, g, b] = hsvToRgb(cpH, s, v);
+      const i = (y * w + x) * 4;
+      img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b; img.data[i + 3] = 255;
+    }
+  }
+  cpSvCtx.putImageData(img, 0, 0);
+}
+
+function updateCpDisplay() {
+  const [r, g, b] = hsvToRgb(cpH, cpS, cpV);
+  const hex = rgbToHex(r, g, b);
+  cpPreview.style.background = hex;
+  cpHex.value = hex;
+}
+
+function openColorPicker() {
+  drawHueBar();
+  drawSvSquare();
+  updateCpDisplay();
+  cpEl.style.display = 'block';
+}
+
+document.getElementById('cp-close').addEventListener('click', () => { cpEl.style.display = 'none'; });
+document.getElementById('cp-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText(cpHex.value).then(() => showStatus('Copied: ' + cpHex.value));
+});
+
+cpHex.addEventListener('input', () => {
+  const hex = cpHex.value.trim();
+  const m = hex.match(/^#?([0-9a-f]{6})$/i);
+  if (!m) return;
+  const r = parseInt(m[1].slice(0, 2), 16) / 255;
+  const g = parseInt(m[1].slice(2, 4), 16) / 255;
+  const b = parseInt(m[1].slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  cpV = max;
+  cpS = max === 0 ? 0 : d / max;
+  if (d === 0) cpH = 0;
+  else if (max === r) cpH = 60 * (((g - b) / d) % 6);
+  else if (max === g) cpH = 60 * ((b - r) / d + 2);
+  else cpH = 60 * ((r - g) / d + 4);
+  if (cpH < 0) cpH += 360;
+  drawSvSquare();
+  cpPreview.style.background = '#' + m[1];
+});
+
+let cpSvDown = false, cpHueDown = false;
+function handleSv(e) {
+  const rect = cpSv.getBoundingClientRect();
+  cpS = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  cpV = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+  updateCpDisplay();
+}
+function handleHue(e) {
+  const rect = cpHue.getBoundingClientRect();
+  cpH = Math.max(0, Math.min(360, (e.clientX - rect.left) / rect.width * 360));
+  drawSvSquare();
+  updateCpDisplay();
+}
+cpSv.addEventListener('mousedown', e => { cpSvDown = true; handleSv(e); });
+cpHue.addEventListener('mousedown', e => { cpHueDown = true; handleHue(e); });
+document.addEventListener('mousemove', e => {
+  if (cpSvDown) handleSv(e);
+  if (cpHueDown) handleHue(e);
+});
+document.addEventListener('mouseup', () => { cpSvDown = false; cpHueDown = false; });
 </script>
 </body>
 </html>

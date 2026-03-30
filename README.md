@@ -75,6 +75,7 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 | : | Summon command palette |
 | f | Find (command palette with `find `) |
 | ? | Toggle help panel |
+| y | Copy node path to clipboard |
 | R | Rescan tree from root |
 
 ### Commands
