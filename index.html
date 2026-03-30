@@ -494,20 +494,20 @@
   <div><span class="key">right-click</span>node → list .md files</div>
   <div><span class="key">right-click</span>viewer → reload file</div>
   <div><span class="key">scroll</span>zoom</div>
-  <div class="group">Navigation</div>
+  <div class="group">Tree Viewer</div>
   <div><span class="key">1-7</span>expand to level N</div>
   <div><span class="key">h/j/k/l</span>move left / down / up / right</div>
   <div><span class="key">i/o</span>zoom in / out</div>
-  <div class="group">Viewer</div>
+  <div class="group">Markdown Viewer</div>
   <div><span class="key">+/-</span>font size</div>
-  <div><span class="key">Ctrl+O/I</span>jump back / forward</div>
-  <div><span class="key">H/L</span>move to left / right</div>
+  <div><span class="key">Ctrl+o/i</span>jump back / forward</div>
+  <div><span class="key">Alt+←/→</span>move to left / right</div>
   <div><span class="key">d</span>toggle viewer</div>
   <div><span class="key">r</span>reload file</div>
-  <div class="group">Other</div>
-  <div><span class="key">:</span>command bar</div>
-  <div><span class="key">?</span>close this panel</div>
-  <div><span class="key">R</span>rescan folder</div>
+  <div class="group">Global</div>
+  <div><span class="key">:</span>summon command palette</div>
+  <div><span class="key">?</span>toggle help panel</div>
+  <div><span class="key">R</span>rescan tree from <span id="help-root"></span></div>
   <div class="storage" id="storageInfo"></div>
 </div>
 <div id="hint">press ? for shortcuts</div>
@@ -1594,6 +1594,11 @@ ccmdPanel.addEventListener('contextmenu', e => {
   reloadCcmd();
 });
 
+// Double-click mdv body to center on the current node
+ccmdBody.addEventListener('dblclick', () => {
+  if (selectedNodePath) centerOnNode(selectedNodePath);
+});
+
 // --- Toolbar buttons ---
 const tbBack = document.getElementById('tb-back');
 const tbFwd = document.getElementById('tb-fwd');
@@ -2447,7 +2452,7 @@ document.addEventListener('keydown', e => {
   }
   if (e.key === 'r') { reloadCcmd(); }
   if (e.key === 'R') { rescan(); }
-  if (e.key === 'H' && ccmdPanel.style.display === 'flex') {
+  if (e.key === 'ArrowLeft' && e.altKey && ccmdPanel.style.display === 'flex') {
     panelSide = 'left';
     ccmdPanel.style.left = '0';
     ccmdPanel.style.right = 'auto';
@@ -2461,7 +2466,7 @@ document.addEventListener('keydown', e => {
     hintEl.style.right = '16px';
     saveMdv();
   }
-  if (e.key === 'L' && ccmdPanel.style.display === 'flex') {
+  if (e.key === 'ArrowRight' && e.altKey && ccmdPanel.style.display === 'flex') {
     panelSide = 'right';
     ccmdPanel.style.right = '0';
     ccmdPanel.style.left = 'auto';
@@ -2479,6 +2484,7 @@ document.addEventListener('keydown', e => {
     const show = helpPanel.style.display === 'none' || !helpPanel.style.display;
     if (show) {
       document.getElementById('storageInfo').textContent = 'localStorage: ' + getStorageInfo();
+      document.getElementById('help-root').textContent = dirHandle ? dirHandle.name : '(none)';
     }
     helpPanel.style.display = show ? 'block' : 'none';
     hintEl.style.display = show ? 'none' : 'block';

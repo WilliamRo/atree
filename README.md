@@ -50,7 +50,7 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 | right-click | Viewer → reload file |
 | scroll | Zoom |
 
-### Navigation
+### Tree Viewer
 
 | Key | Action |
 |-----|--------|
@@ -58,24 +58,24 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 | h/j/k/l | Move left / down / up / right |
 | i/o | Zoom in / out |
 
-### Viewer
+### Markdown Viewer
 
 | Key | Action |
 |-----|--------|
 | +/- | Font size |
-| Ctrl+O/I | Jump back / forward |
-| H/L | Move to left / right |
+| Ctrl+o/i | Jump back / forward |
+| Alt+←/→ | Move to left / right |
 | d | Toggle viewer |
 | r | Reload file |
 
-### Other
+### Global
 
 | Key | Action |
 |-----|--------|
-| : | Command bar |
-| f | Find (command bar with `find `) |
-| ? | Toggle shortcut help |
-| R | Rescan folder |
+| : | Summon command palette |
+| f | Find (command palette with `find `) |
+| ? | Toggle help panel |
+| R | Rescan tree from root |
 
 ### Commands
 
