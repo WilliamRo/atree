@@ -1711,6 +1711,7 @@ ccmdBody.addEventListener('click', async e => {
     jumpPush(nodePath, fileName);
     saveMdv();
     centerOnNode(nodePath);
+    updateToolbar();
   } else {
     showStatus('File not found: ' + hubPath);
   }
@@ -1730,6 +1731,7 @@ function updateToolbar() {
   tbFontSize.textContent = ccmdFontSize;
   buildAddrBar();
 }
+updateToolbar();
 // Auto-update toolbar when panel becomes visible
 new MutationObserver(() => {
   if (ccmdPanel.style.display === 'flex') updateToolbar();
