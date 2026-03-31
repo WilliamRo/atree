@@ -20,6 +20,26 @@ export function renderMarkdown(md) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
+    // Display math block $$...$$
+    if (line.trim().startsWith('$$')) {
+      if (inList) { html += '</ul>'; inList = false; }
+      if (line.trim().endsWith('$$') && line.trim().length > 2) {
+        // Single-line display math
+        html += renderDisplayMath(line.trim().slice(2, -2));
+      } else {
+        // Multi-line: collect until closing $$
+        const mathLines = [line.replace(/^\s*\$\$\s*/, '')];
+        while (i + 1 < lines.length && !lines[i + 1].trim().endsWith('$$')) {
+          mathLines.push(lines[++i]);
+        }
+        if (i + 1 < lines.length) {
+          mathLines.push(lines[++i].replace(/\$\$\s*$/, ''));
+        }
+        html += renderDisplayMath(mathLines.join('\n').trim());
+      }
+      continue;
+    }
+
     // Fenced code block
     if (line.trimStart().startsWith('```')) {
       if (inCode) {
@@ -92,12 +112,35 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function renderDisplayMath(tex) {
+  if (typeof katex === 'undefined') return `<pre>${escHtml(tex)}</pre>`;
+  try {
+    return '<div class="math-display">' + katex.renderToString(tex, { displayMode: true, throwOnError: false }) + '</div>';
+  } catch (e) { return `<pre>${escHtml(tex)}</pre>`; }
+}
+
+function renderInlineMath(tex) {
+  if (typeof katex === 'undefined') return '$' + escHtml(tex) + '$';
+  try {
+    return katex.renderToString(tex, { displayMode: false, throwOnError: false });
+  } catch (e) { return '$' + escHtml(tex) + '$'; }
+}
+
 function inlineMd(s) {
+  // Extract inline math $...$ before escaping (protect from HTML escape)
+  const mathSlots = [];
+  s = s.replace(/\$([^\$]+?)\$/g, (_, tex) => {
+    const idx = mathSlots.length;
+    mathSlots.push(renderInlineMath(tex));
+    return '\x00MATH' + idx + '\x00';
+  });
   s = escHtml(s);
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/`(.+?)`/g, '<code>$1</code>');
   s = s.replace(/\[([^\]]+)\]\((hub\/[^)]+)\)/g, '<a href="#" data-hub-link="$2" class="hub-link" title="$2">$1</a>');
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Restore math slots
+  s = s.replace(/\x00MATH(\d+)\x00/g, (_, idx) => mathSlots[parseInt(idx)]);
   return s;
 }
 
