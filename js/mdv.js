@@ -255,6 +255,7 @@ export async function restoreRootState() {
         ccmdTitle.textContent = s.viewPath + '/' + s.viewFile;
         ccmdBody.innerHTML = renderMarkdown(content);
         ccmdPanel.style.display = 'flex';
+        updateToolbar();
       }
     }
   } catch (e) {}
@@ -305,6 +306,7 @@ export function updateToolbar() {
   tbBack.disabled = state.jumpIdx <= 0;
   tbFwd.disabled = state.jumpIdx >= state.jumpList.length - 1;
   tbFontSize.textContent = state.ccmdFontSize;
+  ccmdPanel.style.fontSize = state.ccmdFontSize + 'px';
   buildAddrBar();
 }
 
