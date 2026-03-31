@@ -477,6 +477,7 @@ document.addEventListener('mousedown', e => {
 });
 
 async function onAddrSegClick(seg, idx, parts) {
+  if (state.editMode) return;
   const anchorId = 'seg-' + idx;
   if (idx === 0) {
     const history = await loadHistory();
@@ -540,6 +541,7 @@ async function onAddrSegClick(seg, idx, parts) {
 }
 
 async function onFileSegClick(seg) {
+  if (state.editMode) return;
   if (!state.selectedNodePath) return;
   const mdFiles = await listMdFiles(state.selectedNodePath);
 
