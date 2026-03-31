@@ -643,6 +643,7 @@ canvas.addEventListener('mouseleave', () => { state.dragging = false; tooltip.st
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 1) return;
   e.preventDefault();
+  if (state.editMode) return;
   const now = Date.now();
   if (now - state.lastMidClick < 350) {
     state.zoom = 1;
@@ -677,6 +678,7 @@ canvas.addEventListener('mousedown', e => {
 // --- Right-click: context menu with .md files ---
 canvas.addEventListener('contextmenu', async e => {
   e.preventDefault();
+  if (state.editMode) return;
   ctxMenu.style.display = 'none';
   const world = toWorld(e.clientX, e.clientY);
   for (let i = state.nodes.length - 1; i >= 0; i--) {
