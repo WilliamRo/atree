@@ -685,22 +685,27 @@ const btnEdit = document.getElementById('btn-edit');
 const btnSave = document.getElementById('btn-save');
 const btnCancel = document.getElementById('btn-cancel');
 
-function enterEditMode() {
+async function enterEditMode() {
   if (!state.selectedNodePath || !state.selectedFileName) return;
-  // Read current file content (raw text, not rendered HTML)
-  readMdFile(state.selectedNodePath, state.selectedFileName).then(content => {
-    if (content === null) { showStatus('Cannot read file'); return; }
-    state.editMode = true;
-    state.editOriginal = content;
-    ccmdEditor.value = content;
-    ccmdBody.style.display = 'none';
-    ccmdEditor.style.display = 'block';
-    btnEdit.style.display = 'none';
-    btnSave.style.display = '';
-    btnSave.disabled = true;
-    btnCancel.style.display = '';
-    ccmdEditor.focus();
-  });
+  if (!state.dirHandle) { showStatus('No folder access'); return; }
+  // Ensure readwrite permission
+  try {
+    let perm = await state.dirHandle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') perm = await state.dirHandle.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') { showStatus('Write permission denied'); return; }
+  } catch (e) { showStatus('Permission error'); return; }
+  const content = await readMdFile(state.selectedNodePath, state.selectedFileName);
+  if (content === null) { showStatus('Cannot read file'); return; }
+  state.editMode = true;
+  state.editOriginal = content;
+  ccmdEditor.value = content;
+  ccmdBody.style.display = 'none';
+  ccmdEditor.style.display = 'block';
+  btnEdit.style.display = 'none';
+  btnSave.style.display = '';
+  btnSave.disabled = true;
+  btnCancel.style.display = '';
+  ccmdEditor.focus();
 }
 
 function exitEditMode() {
