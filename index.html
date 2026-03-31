@@ -935,7 +935,7 @@ function renderMarkdown(md) {
     }
 
     // Headings
-    const hMatch = line.match(/^(#{1,3})\s+(.*)/);
+    const hMatch = line.match(/^(#{1,6})\s+(.*)/);
     if (hMatch) {
       if (inList) { html += '</ul>'; inList = false; }
       const lvl = hMatch[1].length;
@@ -2233,10 +2233,14 @@ async function updateDropdown() {
     } else {
       // Simple name/path search
       const matchingNodes = ccmdNodes.filter(n => n.path.toLowerCase().includes(rawQuery));
+      const seen = new Set();
       for (const n of matchingNodes) {
         const mdFiles = await listMdFiles(n.path);
         const sorted = mdFiles.filter(f => f === 'CLAUDE.md').concat(mdFiles.filter(f => f !== 'CLAUDE.md'));
         for (const f of sorted) {
+          const key = n.path + '/' + f;
+          if (seen.has(key)) continue;
+          seen.add(key);
           dropdownItems.push({ name: f, path: n.path, hlTerm: rawQuery });
         }
       }
