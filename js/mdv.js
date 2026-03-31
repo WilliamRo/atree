@@ -1,7 +1,7 @@
 // mdv.js — markdown renderer, viewer panel, toolbar, address bar, jump list
 import {
   state, ccmdPanel, ccmdTitle, ccmdBody, ctxMenu, helpPanel, hintEl, ccmdDrag, nsKey,
-  readMdFile, listMdFiles, showStatus, setActiveRoot, saveHandle, getTopChildren, saveHistory, loadHistory,
+  readMdFile, listMdFiles, writeMdFile, showStatus, setActiveRoot, saveHandle, getTopChildren, saveHistory, loadHistory,
 } from './core.js';
 import {
   setMdvCallbacks, draw, layout, centerOnNode, saveView, scanAndRender,
@@ -233,8 +233,8 @@ export async function renderHistory() {
       const entry = history[idx];
       if (!entry || !entry.handle) return;
       try {
-        let perm = await entry.handle.queryPermission({ mode: 'read' });
-        if (perm !== 'granted') perm = await entry.handle.requestPermission({ mode: 'read' });
+        let perm = await entry.handle.queryPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') perm = await entry.handle.requestPermission({ mode: 'readwrite' });
         if (perm === 'granted') {
           state.dirHandle = entry.handle;
           setActiveRoot(state.dirHandle.name);
@@ -266,12 +266,14 @@ export function updateToolbar() {
 }
 
 tbBack.addEventListener('click', () => {
+  if (state.editMode) return;
   if (state.jumpIdx > 0) { state.jumpIdx--; saveJumpList(); jumpTo(state.jumpList[state.jumpIdx]); }
 });
 tbFwd.addEventListener('click', () => {
+  if (state.editMode) return;
   if (state.jumpIdx < state.jumpList.length - 1) { state.jumpIdx++; saveJumpList(); jumpTo(state.jumpList[state.jumpIdx]); }
 });
-tbRefresh.addEventListener('click', () => reloadCcmd());
+tbRefresh.addEventListener('click', () => { if (!state.editMode) reloadCcmd(); });
 tbFontDec.addEventListener('click', () => {
   state.ccmdFontSize = Math.max(8, state.ccmdFontSize - 1);
   ccmdPanel.style.fontSize = state.ccmdFontSize + 'px';
@@ -487,8 +489,8 @@ async function onAddrSegClick(seg, idx, parts) {
       const entry = history.find(h => h.name === name);
       if (!entry || !entry.handle) return;
       try {
-        let perm = await entry.handle.queryPermission({ mode: 'read' });
-        if (perm !== 'granted') perm = await entry.handle.requestPermission({ mode: 'read' });
+        let perm = await entry.handle.queryPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') perm = await entry.handle.requestPermission({ mode: 'readwrite' });
         if (perm === 'granted') {
           state.dirHandle = entry.handle;
           setActiveRoot(state.dirHandle.name);
@@ -601,6 +603,7 @@ async function onFileSegClick(seg) {
 // --- Panel event listeners ---
 
 document.getElementById('ccmd-close').addEventListener('click', () => {
+  if (state.editMode) return; // block close during edit
   ccmdPanel.style.display = 'none';
   state.selectedNodePath = null;
   state.selectedFileName = null;
@@ -620,6 +623,7 @@ ccmdBody.addEventListener('dblclick', () => {
 
 // Hub cross-node links
 ccmdBody.addEventListener('click', async e => {
+  if (state.editMode) return;
   const link = e.target.closest('a[data-hub-link]');
   if (!link) return;
   e.preventDefault();
@@ -674,3 +678,75 @@ setMdvCallbacks({
 
 // Export jumpTo and saveJumpList for commands.js
 export { jumpTo, saveJumpList };
+
+// --- Edit mode ---
+const ccmdEditor = document.getElementById('ccmd-editor');
+const btnEdit = document.getElementById('btn-edit');
+const btnSave = document.getElementById('btn-save');
+const btnCancel = document.getElementById('btn-cancel');
+
+function enterEditMode() {
+  if (!state.selectedNodePath || !state.selectedFileName) return;
+  // Read current file content (raw text, not rendered HTML)
+  readMdFile(state.selectedNodePath, state.selectedFileName).then(content => {
+    if (content === null) { showStatus('Cannot read file'); return; }
+    state.editMode = true;
+    state.editOriginal = content;
+    ccmdEditor.value = content;
+    ccmdBody.style.display = 'none';
+    ccmdEditor.style.display = 'block';
+    btnEdit.style.display = 'none';
+    btnSave.style.display = '';
+    btnSave.disabled = true;
+    btnCancel.style.display = '';
+    ccmdEditor.focus();
+  });
+}
+
+function exitEditMode() {
+  state.editMode = false;
+  state.editOriginal = null;
+  ccmdEditor.style.display = 'none';
+  ccmdBody.style.display = '';
+  btnEdit.style.display = '';
+  btnSave.style.display = 'none';
+  btnCancel.style.display = 'none';
+}
+
+function hasUnsavedChanges() {
+  return state.editMode && ccmdEditor.value !== state.editOriginal;
+}
+
+export function isEditMode() { return state.editMode; }
+export function tryExitEditMode() {
+  if (!state.editMode) return true;
+  if (!hasUnsavedChanges()) { exitEditMode(); return true; }
+  if (confirm('Discard unsaved changes?')) { exitEditMode(); return true; }
+  return false;
+}
+
+ccmdEditor.addEventListener('input', () => {
+  btnSave.disabled = ccmdEditor.value === state.editOriginal;
+});
+
+btnEdit.addEventListener('click', enterEditMode);
+
+btnCancel.addEventListener('click', () => {
+  if (hasUnsavedChanges()) {
+    if (!confirm('Discard unsaved changes?')) return;
+  }
+  exitEditMode();
+});
+
+btnSave.addEventListener('click', async () => {
+  if (!confirm('Overwrite "' + state.selectedFileName + '"?')) return;
+  const ok = await writeMdFile(state.selectedNodePath, state.selectedFileName, ccmdEditor.value);
+  if (ok) {
+    showStatus('Saved: ' + state.selectedFileName);
+    // Re-render with new content
+    ccmdBody.innerHTML = renderMarkdown(ccmdEditor.value);
+    exitEditMode();
+  } else {
+    showStatus('Save failed');
+  }
+});

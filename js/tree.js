@@ -84,9 +84,9 @@ export async function scanAndRender() {
 export async function rescan() {
   if (state.dirHandle) {
     try {
-      const perm = await state.dirHandle.queryPermission({ mode: 'read' });
+      const perm = await state.dirHandle.queryPermission({ mode: 'readwrite' });
       if (perm === 'granted') { await scanAndRender(); return; }
-      const req = await state.dirHandle.requestPermission({ mode: 'read' });
+      const req = await state.dirHandle.requestPermission({ mode: 'readwrite' });
       if (req === 'granted') { await scanAndRender(); return; }
     } catch (e) {}
   }
@@ -526,8 +526,8 @@ if (cached) {
   try {
     const handle = await loadHandle(state.activeRoot);
     if (!handle) return;
-    let perm = await handle.queryPermission({ mode: 'read' });
-    if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'read' });
+    let perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
       state.dirHandle = handle;
       // Restore mdv viewing state
@@ -610,6 +610,7 @@ canvas.addEventListener('mouseup', async e => {
   state.dragging = false;
   saveView();
   if (e.button !== 0) return; // left-click only
+  if (state.editMode) return; // block navigation during edit
   const dx = e.clientX - state.clickStartX, dy = e.clientY - state.clickStartY;
   if (dx * dx + dy * dy < 9) {
     const world = toWorld(e.clientX, e.clientY);

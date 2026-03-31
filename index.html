@@ -446,6 +446,44 @@
     color: #6e7681;
   }
   #ccmd-empty { color: #484f58; font-style: italic; }
+  #ccmd-editor {
+    flex: 1;
+    background: #0d1117;
+    color: #c9d1d9;
+    border: none;
+    padding: 16px 18px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: inherit;
+    line-height: 1.7;
+    resize: none;
+    outline: none;
+    scrollbar-width: thin;
+    scrollbar-color: #30363d transparent;
+  }
+  #ccmd-editor::-webkit-scrollbar { width: 6px; }
+  #ccmd-editor::-webkit-scrollbar-track { background: transparent; }
+  #ccmd-editor::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  #ccmd-bottombar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    border-top: 1px solid #21262d;
+  }
+  #ccmd-bottombar button {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #c9d1d9;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 14px;
+    cursor: pointer;
+  }
+  #ccmd-bottombar button:hover { background: #30363d; }
+  #btn-save { color: #7ee787; }
+  #btn-save:disabled { color: #484f58; cursor: default; opacity: 0.4; }
+  #btn-cancel { color: #f0883e; }
   #color-picker {
     position: fixed;
     top: 50%;
@@ -607,6 +645,15 @@
   </div>
   <div id="addr-dropdown"></div>
   <div id="ccmd-body"></div>
+  <textarea id="ccmd-editor" style="display:none;"></textarea>
+  <div id="ccmd-bottombar">
+    <div></div>
+    <div class="tb-group">
+      <button id="btn-edit" title="Edit file">Edit</button>
+      <button id="btn-save" title="Save file" style="display:none;">Save</button>
+      <button id="btn-cancel" title="Cancel editing" style="display:none;">Cancel</button>
+    </div>
+  </div>
 </div>
 <div id="color-picker" style="display:none;">
   <div id="cp-header">

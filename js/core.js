@@ -68,6 +68,9 @@ export const state = {
   // Address bar state
   addrActiveId: null,
   addrCloseTime: 0,
+  // Edit mode state
+  editMode: false,
+  editOriginal: null, // original text before editing
 };
 
 // --- Namespace key helper ---
@@ -192,6 +195,18 @@ export async function readMdFile(nodePath, filename) {
     const file = await fileHandle.getFile();
     return await file.text();
   } catch (e) { return null; }
+}
+
+export async function writeMdFile(nodePath, filename, content) {
+  const handle = await getDirHandle(nodePath);
+  if (!handle) return false;
+  try {
+    const fileHandle = await handle.getFileHandle(filename);
+    const writable = await fileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    return true;
+  } catch (e) { return false; }
 }
 
 // --- Utility functions ---

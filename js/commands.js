@@ -14,6 +14,7 @@ import {
   renderMarkdown, saveMdv, jumpPush, updateToolbar, reloadCcmd,
   restoreRootState, jumpTo, saveJumpList,
   getChildNodes, nodeHasCcmd, findFirstMdNode,
+  isEditMode, tryExitEditMode,
 } from './mdv.js';
 
 // --- Command bar DOM refs ---
@@ -175,8 +176,8 @@ async function selectDropdownItem(idx) {
   if (f.isGoto) {
     closeCmdBar(false);
     try {
-      let perm = await f.handle.queryPermission({ mode: 'read' });
-      if (perm !== 'granted') perm = await f.handle.requestPermission({ mode: 'read' });
+      let perm = await f.handle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await f.handle.requestPermission({ mode: 'readwrite' });
       if (perm === 'granted') {
         state.dirHandle = f.handle;
         setActiveRoot(state.dirHandle.name);
@@ -370,6 +371,14 @@ document.addEventListener('keydown', e => {
   // Color picker escape handled in colorpicker.js
   if (document.getElementById('color-picker').style.display === 'block') {
     return;
+  }
+  // Edit mode: only allow font size (+/-) and Escape (handled by mdv cancel)
+  if (isEditMode()) {
+    if (e.key === '+' || e.key === '=' || e.key === '-') {
+      // fall through to font size handling below
+    } else {
+      return;
+    }
   }
   if (state.cmdBarOpen) return;
   if (e.key === 'Escape') {
