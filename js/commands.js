@@ -470,7 +470,7 @@ document.addEventListener('keydown', e => {
     const p = state.hoveredPath || state.selectedNodePath;
     if (p) { navigator.clipboard.writeText(p).then(() => showStatus('Copied: ' + p)); }
   }
-  if (e.key === 'ArrowLeft' && e.altKey && ccmdPanel.style.display === 'flex') {
+  if (e.key === 'H' && ccmdPanel.style.display === 'flex') {
     state.panelSide = 'left';
     ccmdPanel.style.left = '0';
     ccmdPanel.style.right = 'auto';
@@ -484,7 +484,7 @@ document.addEventListener('keydown', e => {
     hintEl.style.right = '16px';
     saveMdv();
   }
-  if (e.key === 'ArrowRight' && e.altKey && ccmdPanel.style.display === 'flex') {
+  if (e.key === 'L' && ccmdPanel.style.display === 'flex') {
     state.panelSide = 'right';
     ccmdPanel.style.right = '0';
     ccmdPanel.style.left = 'auto';

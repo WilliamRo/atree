@@ -64,7 +64,7 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 |-----|--------|
 | +/- | Font size |
 | Ctrl+o/i | Jump back / forward |
-| Alt+←/→ | Move to left / right |
+| H/L | Move to left / right |
 | d | Toggle viewer |
 | r | Reload file |
 
