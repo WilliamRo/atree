@@ -33,6 +33,7 @@ async function scanDir(handle, maxDepth = 7, depth = 0) {
 
   const children = [];
   let hasCcmd = false;
+  let hasDf = false;
 
   for await (const entry of handle.values()) {
     if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue;
@@ -40,6 +41,8 @@ async function scanDir(handle, maxDepth = 7, depth = 0) {
       children.push(await scanDir(entry, maxDepth, depth + 1));
     } else if (entry.name === 'CLAUDE.md') {
       hasCcmd = true;
+    } else if (entry.name === 'DESIGN.md') {
+      hasDf = true;
     }
   }
   if (children.length > 0) {
@@ -47,6 +50,7 @@ async function scanDir(handle, maxDepth = 7, depth = 0) {
     node.children = children;
   }
   if (hasCcmd) node.hasCcmd = true;
+  if (hasDf) node.hasDf = true;
   return node;
 }
 
@@ -105,6 +109,19 @@ export function findHasCcmd(path) {
     if (!cur) return false;
   }
   return !!cur.hasCcmd;
+}
+
+export function findHasDf(path) {
+  const parts = path.split('/');
+  let cur = state.treeData;
+  if (!cur) return false;
+  if (parts.length === 1) return !!cur.hasDf;
+  for (let i = 1; i < parts.length; i++) {
+    if (!cur.children) return false;
+    cur = cur.children.find(c => c.name === parts[i]);
+    if (!cur) return false;
+  }
+  return !!cur.hasDf;
 }
 
 // --- Layout & drawing ---
@@ -228,6 +245,7 @@ export function draw() {
 
     // Check if this node has a ccmd
     const hasCcmd = findHasCcmd(node.path);
+    const hasDf = findHasDf(node.path);
     const isFocused = state.focusedPath === node.path;
 
     // Focus glow (behind node)
@@ -275,10 +293,18 @@ export function draw() {
       ctx.fill();
     }
 
-    // Ccmd indicator — small orange dot
+    // Ccmd indicator — small orange dot (upper-right)
     if (hasCcmd && sr > 3) {
       ctx.beginPath();
       ctx.arc(s.x + sr * 0.7, s.y - sr * 0.7, Math.max(2, sr * 0.25), 0, Math.PI * 2);
+      ctx.fillStyle = '#f0883e';
+      ctx.fill();
+    }
+
+    // Design file indicator — small orange dot (lower-left)
+    if (hasDf && sr > 3) {
+      ctx.beginPath();
+      ctx.arc(s.x - sr * 0.7, s.y + sr * 0.7, Math.max(2, sr * 0.25), 0, Math.PI * 2);
       ctx.fillStyle = '#f0883e';
       ctx.fill();
     }
@@ -620,16 +646,19 @@ canvas.addEventListener('mouseup', async e => {
       const ddx = world.x - n.x, ddy = world.y - n.y;
       const hitR = n.r + 4 / state.zoom;
       if (ddx * ddx + ddy * ddy < hitR * hitR) {
-        if (!findHasCcmd(n.path)) break;
+        const hasCcmd = findHasCcmd(n.path);
+        const hasDf = findHasDf(n.path);
+        if (!hasCcmd && !hasDf) break;
+        const fileName = hasCcmd ? 'CLAUDE.md' : 'DESIGN.md';
         state.selectedNodePath = n.path;
-        state.selectedFileName = 'CLAUDE.md';
-        const content = await readMdFile(n.path, 'CLAUDE.md');
+        state.selectedFileName = fileName;
+        const content = await readMdFile(n.path, fileName);
         if (content !== null) {
-          ccmdTitle.textContent = n.path + '/CLAUDE.md';
+          ccmdTitle.textContent = n.path + '/' + fileName;
           ccmdBody.innerHTML = _renderMarkdown(content);
         }
         ccmdPanel.style.display = 'flex';
-        _jumpPush(n.path, 'CLAUDE.md');
+        _jumpPush(n.path, fileName);
         _saveMdv();
         _updateToolbar();
         break;
