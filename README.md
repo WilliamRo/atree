@@ -43,7 +43,7 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 | Key | Action |
 |-----|--------|
 | drag | Pan canvas |
-| left-click | Node → view CLAUDE.md |
+| left-click | Node → view CLAUDE.md / DESIGN.md |
 | mid-dblclick | Reset view |
 | middle-click | Node → expand / collapse |
 | right-click | Node → list .md files |
