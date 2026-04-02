@@ -14,7 +14,13 @@ export function renderMarkdown(md) {
   const lines = md.split('\n');
   let html = '';
   let inList = false;
+  let listDepth = 0;
   let inCode = false;
+  function closeList() {
+    if (!inList) return;
+    while (listDepth > 0) { html += '</ul>'; listDepth--; }
+    html += '</ul>'; inList = false;
+  }
   let codeBuf = '';
 
   for (let i = 0; i < lines.length; i++) {
@@ -22,7 +28,7 @@ export function renderMarkdown(md) {
 
     // Display math block $$...$$
     if (line.trim().startsWith('$$')) {
-      if (inList) { html += '</ul>'; inList = false; }
+      closeList();
       if (line.trim().endsWith('$$') && line.trim().length > 2) {
         // Single-line display math
         html += renderDisplayMath(line.trim().slice(2, -2));
@@ -47,7 +53,7 @@ export function renderMarkdown(md) {
         codeBuf = '';
         inCode = false;
       } else {
-        if (inList) { html += '</ul>'; inList = false; }
+        closeList();
         inCode = true;
       }
       continue;
@@ -56,13 +62,13 @@ export function renderMarkdown(md) {
 
     // Empty line
     if (line.trim() === '') {
-      if (inList) { html += '</ul>'; inList = false; }
+      closeList();
       continue;
     }
 
     // Blockquote
     if (line.trimStart().startsWith('> ') || line.trim() === '>') {
-      if (inList) { html += '</ul>'; inList = false; }
+      closeList();
       const bqLines = [line.replace(/^\s*>\s?/, '')];
       while (i + 1 < lines.length && (lines[i + 1].trimStart().startsWith('> ') || lines[i + 1].trim() === '>')) {
         bqLines.push(lines[++i].replace(/^\s*>\s?/, ''));
@@ -74,7 +80,7 @@ export function renderMarkdown(md) {
     // Headings
     const hMatch = line.match(/^(#{1,6})\s+(.*)/);
     if (hMatch) {
-      if (inList) { html += '</ul>'; inList = false; }
+      closeList();
       const lvl = hMatch[1].length;
       html += `<h${lvl}>${inlineMd(hMatch[2])}</h${lvl}>`;
       continue;
@@ -82,7 +88,7 @@ export function renderMarkdown(md) {
 
     // Table
     if (line.includes('|') && line.trim().startsWith('|')) {
-      if (inList) { html += '</ul>'; inList = false; }
+      closeList();
       const tableLines = [line];
       while (i + 1 < lines.length && lines[i + 1].includes('|') && lines[i + 1].trim().startsWith('|')) {
         tableLines.push(lines[++i]);
@@ -91,19 +97,23 @@ export function renderMarkdown(md) {
       continue;
     }
 
-    // List item
+    // List item (supports nested indentation)
     if (line.match(/^\s*[-*]\s/)) {
-      if (!inList) { html += '<ul>'; inList = true; }
+      if (!inList) { inList = true; listDepth = 0; html += '<ul>'; }
+      const indent = line.match(/^(\s*)/)[1].length;
+      const depth = Math.floor(indent / 2);
+      while (depth > listDepth) { html += '<ul>'; listDepth++; }
+      while (depth < listDepth) { html += '</ul>'; listDepth--; }
       html += `<li>${inlineMd(line.replace(/^\s*[-*]\s/, ''))}</li>`;
       continue;
     }
 
     // Paragraph
-    if (inList) { html += '</ul>'; inList = false; }
+    closeList();
     html += `<p>${inlineMd(line)}</p>`;
   }
 
-  if (inList) html += '</ul>';
+  closeList();
   if (inCode) html += `<pre><code>${escHtml(codeBuf.trimEnd())}</code></pre>`;
   return html;
 }
