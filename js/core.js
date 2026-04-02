@@ -7,7 +7,7 @@ export const DB_STORE = 'handles';
 export const DB_HISTORY_STORE = 'history';
 export const DB_HISTORY_KEY = 'roots';
 export const MAX_HISTORY = 5;
-export const SKIP = new Set(['.git', '.idea', '.agents', '.claude', '__pycache__', 'node_modules', '.pytest_cache']);
+export const SKIP = new Set(['.git', '.idea', '.agents', '__pycache__', 'node_modules', '.pytest_cache']);
 
 // --- DOM refs ---
 export const canvas = document.getElementById('c');

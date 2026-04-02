@@ -36,7 +36,7 @@ async function scanDir(handle, maxDepth = 7, depth = 0) {
   let hasDf = false;
 
   for await (const entry of handle.values()) {
-    if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue;
+    if (SKIP.has(entry.name) || (entry.name.startsWith('.') && entry.name !== '.claude')) continue;
     if (entry.kind === 'directory') {
       children.push(await scanDir(entry, maxDepth, depth + 1));
     } else if (entry.name === 'CLAUDE.md') {
