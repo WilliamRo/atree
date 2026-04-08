@@ -147,6 +147,15 @@ async function updateDropdown() {
     }
   }
   if (state.dropdownItems.length === 0) { cmdDropdown.style.display = 'none'; state.dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
+  // Sort: exact name match first, then partial
+  const sortQuery = rawQuery.split('/').pop() || rawQuery;
+  state.dropdownItems.sort((a, b) => {
+    const aName = (a.isNode ? a.name : a.path.split('/').pop() || a.name).toLowerCase();
+    const bName = (b.isNode ? b.name : b.path.split('/').pop() || b.name).toLowerCase();
+    const aExact = aName === sortQuery ? 0 : 1;
+    const bExact = bName === sortQuery ? 0 : 1;
+    return aExact - bExact;
+  });
   state.dropdownItems = state.dropdownItems.slice(0, 30);
   cmdDropdown.innerHTML = state.dropdownItems.map((f, i) => {
     const nameHtml = f.isNode ? highlightMatch(f.name, f.hlTerm) : f.name;
