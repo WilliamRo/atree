@@ -27,7 +27,7 @@ export function setMdvCallbacks(callbacks) {
 
 // --- Directory scanning ---
 
-async function scanDir(handle, maxDepth = 7, depth = 0) {
+async function scanDir(handle, maxDepth = 10, depth = 0) {
   const node = { name: handle.name };
   if (depth >= maxDepth) return node;
 
