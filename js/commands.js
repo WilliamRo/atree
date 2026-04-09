@@ -147,12 +147,16 @@ async function updateDropdown() {
     }
   }
   if (state.dropdownItems.length === 0) { cmdDropdown.style.display = 'none'; state.dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
-  // Sort: exact > starts-with > contains
+  // Sort: exact > starts-with > word-boundary > contains
   const sortQuery = rawQuery.split('/').pop() || rawQuery;
+  const wordBoundaryMatch = (name, q) => {
+    const idx = name.indexOf(q);
+    return idx > 0 && (name[idx - 1] === '-' || name[idx - 1] === '_');
+  };
   state.dropdownItems.sort((a, b) => {
     const aName = (a.isNode ? a.name : a.path.split('/').pop() || a.name).toLowerCase();
     const bName = (b.isNode ? b.name : b.path.split('/').pop() || b.name).toLowerCase();
-    const rank = n => n === sortQuery ? 0 : n.startsWith(sortQuery) ? 1 : 2;
+    const rank = n => n === sortQuery ? 0 : n.startsWith(sortQuery) ? 1 : wordBoundaryMatch(n, sortQuery) ? 2 : 3;
     return rank(aName) - rank(bName);
   });
   state.dropdownItems = state.dropdownItems.slice(0, 30);
