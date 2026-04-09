@@ -55,7 +55,10 @@ function scrollDropdownToActive() {
   if (active) active.scrollIntoView({ block: 'nearest' });
 }
 
+let updateToken = 0;
+
 async function updateDropdown() {
+  const myToken = ++updateToken;
   const val = cmdInput.value.trim().toLowerCase();
   const wrap = document.getElementById('cmd-wrap');
 
@@ -65,6 +68,7 @@ async function updateDropdown() {
     state.gotoMode = true;
     const query = (gotoMatch[1] || '').toLowerCase();
     const history = await loadHistory();
+    if (myToken !== updateToken) return;
     state.dropdownItems = history
       .filter(h => !query || h.name.toLowerCase().includes(query) || (h.context || '').toLowerCase().includes(query))
       .map(h => ({ name: h.name, context: h.context || '', handle: h.handle, hlTerm: query, isGoto: true }));
@@ -112,13 +116,14 @@ async function updateDropdown() {
     const seen = new Set();
     for (const n of ccmdNodes) {
       const mdFiles = await listMdFiles(n.path);
+      if (myToken !== updateToken) return;
       for (const f of mdFiles) {
         if (f === 'CLAUDE.md' || f === 'DESIGN.md') continue;
         if (!f.toLowerCase().includes(query)) continue;
         const key = n.path + '/' + f;
         if (seen.has(key)) continue;
         seen.add(key);
-        state.dropdownItems.push({ name: f, path: n.path, hlTerm: query });
+        state.dropdownItems.push({ name: f, path: n.path, hlTerm: query, globalFile: true });
       }
     }
   } else if (lastSlash >= 0) {
@@ -151,6 +156,7 @@ async function updateDropdown() {
       }
       // Md files in parent
       const mdFiles = await listMdFiles(parent.path);
+      if (myToken !== updateToken) return;
       for (const f of mdFiles) {
         if (query && !f.toLowerCase().includes(query)) continue;
         const key = 'f:' + parent.path + '/' + f;
@@ -197,7 +203,7 @@ async function updateDropdown() {
   state.dropdownItems = state.dropdownItems.slice(0, 30);
   cmdDropdown.innerHTML = state.dropdownItems.map((f, i) => {
     const nameHtml = highlightMatch(f.name, f.hlTerm);
-    const pathHtml = highlightMatch(f.path, f.hlTerm);
+    const pathHtml = f.globalFile ? f.path : highlightMatch(f.path, f.hlTerm);
     return '<div class="cmd-item' + (i === state.dropdownIdx ? ' active' : '') + '" data-idx="' + i + '">' +
       '<span class="cmd-name">' + nameHtml + '</span>' +
       '<span class="cmd-path">' + pathHtml + '</span></div>';
