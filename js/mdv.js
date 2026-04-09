@@ -154,10 +154,28 @@ function inlineMd(s) {
   return s;
 }
 
+function splitTableRow(line) {
+  // Split on | but skip | inside backtick spans
+  const cells = [];
+  let cur = '';
+  let inBt = false;
+  for (let j = 0; j < line.length; j++) {
+    const ch = line[j];
+    if (ch === '`') { inBt = !inBt; cur += ch; }
+    else if (ch === '|' && !inBt) { cells.push(cur); cur = ''; }
+    else { cur += ch; }
+  }
+  cells.push(cur);
+  // Remove first/last empty cells (leading/trailing |)
+  if (cells.length > 0 && cells[0].trim() === '') cells.shift();
+  if (cells.length > 0 && cells[cells.length - 1].trim() === '') cells.pop();
+  return cells.map(c => c.trim());
+}
+
 function renderTable(lines) {
   const rows = lines
     .filter(l => !l.match(/^\s*\|[\s-:|]+\|\s*$/))
-    .map(l => l.split('|').slice(1, -1).map(c => c.trim()));
+    .map(l => splitTableRow(l));
   if (rows.length === 0) return '';
   let html = '<table>';
   html += '<tr>' + rows[0].map(c => `<th>${inlineMd(c)}</th>`).join('') + '</tr>';
