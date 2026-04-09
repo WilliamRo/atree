@@ -102,7 +102,26 @@ async function updateDropdown() {
 
   state.dropdownItems = [];
 
-  if (lastSlash >= 0) {
+  if (rawQuery.startsWith('/')) {
+    // --- Global file search mode: find /file_pattern ---
+    // Shows md files across the whole tree (excluding CLAUDE.md / DESIGN.md)
+    const query = rawQuery.slice(1);
+    if (query.length === 0) {
+      cmdDropdown.style.display = 'none'; state.dropdownItems = []; state.dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return;
+    }
+    const seen = new Set();
+    for (const n of ccmdNodes) {
+      const mdFiles = await listMdFiles(n.path);
+      for (const f of mdFiles) {
+        if (f === 'CLAUDE.md' || f === 'DESIGN.md') continue;
+        if (!f.toLowerCase().includes(query)) continue;
+        const key = n.path + '/' + f;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        state.dropdownItems.push({ name: f, path: n.path, hlTerm: query });
+      }
+    }
+  } else if (lastSlash >= 0) {
     // --- Drill-down mode: find prefix/[query] ---
     // Shows child nodes + md files of the matching parent node
     const prefix = rawQuery.slice(0, lastSlash);
@@ -155,7 +174,9 @@ async function updateDropdown() {
   if (state.dropdownItems.length === 0) { cmdDropdown.style.display = 'none'; state.dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
   // Sort: exact > starts-with > word-boundary > name-contains > path-only
   // In drill-down mode: nodes first, then files
-  const sortQuery = lastSlash >= 0 ? (rawQuery.slice(lastSlash + 1) || '') : rawQuery;
+  const sortQuery = rawQuery.startsWith('/')
+    ? rawQuery.slice(1)
+    : (lastSlash >= 0 ? (rawQuery.slice(lastSlash + 1) || '') : rawQuery);
   const wordBoundaryMatch = (name, q) => {
     if (!q) return false;
     const idx = name.indexOf(q);
