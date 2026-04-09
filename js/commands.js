@@ -97,72 +97,86 @@ async function updateDropdown() {
   const findMatch = val.match(/^find\s+(.+)/);
   if (!findMatch) { cmdDropdown.style.display = 'none'; state.dropdownItems = []; state.dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
   const rawQuery = findMatch[1].toLowerCase();
-  const browseMode = rawQuery.endsWith('/');
   const ccmdNodes = collectSearchableNodes();
+  const lastSlash = rawQuery.lastIndexOf('/');
 
   state.dropdownItems = [];
-  if (browseMode) {
-    const prefix = rawQuery.slice(0, -1);
-    const matchingNodes = ccmdNodes.filter(n => n.path.toLowerCase().includes(prefix));
-    for (const n of matchingNodes) {
+
+  if (lastSlash >= 0) {
+    // --- Drill-down mode: find prefix/[query] ---
+    // Shows child nodes + md files of the matching parent node
+    const prefix = rawQuery.slice(0, lastSlash);
+    const query = rawQuery.slice(lastSlash + 1);
+    // Two-pass parent matching: exact first, fuzzy fallback
+    let parentNodes = ccmdNodes.filter(n => {
+      const path = n.path.toLowerCase();
+      const name = n.name.toLowerCase();
+      return name === prefix || path === prefix || path.endsWith('/' + prefix);
+    });
+    if (parentNodes.length === 0) {
+      parentNodes = ccmdNodes.filter(n => n.path.toLowerCase().includes(prefix));
+    }
+    const seen = new Set();
+    for (const parent of parentNodes) {
+      // Direct child nodes
       const children = ccmdNodes.filter(c => {
         const parts = c.path.split('/');
         parts.pop();
-        return parts.join('/') === n.path;
+        return parts.join('/') === parent.path;
       });
       for (const c of children) {
-        state.dropdownItems.push({ name: c.name, path: c.path, hlTerm: '', isNode: true });
+        if (query && !c.name.toLowerCase().includes(query)) continue;
+        if (seen.has('n:' + c.path)) continue;
+        seen.add('n:' + c.path);
+        state.dropdownItems.push({ name: c.name, path: c.path, hlTerm: query, isNode: true });
+      }
+      // Md files in parent
+      const mdFiles = await listMdFiles(parent.path);
+      for (const f of mdFiles) {
+        if (query && !f.toLowerCase().includes(query)) continue;
+        const key = 'f:' + parent.path + '/' + f;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        state.dropdownItems.push({ name: f, path: parent.path, hlTerm: query });
       }
     }
   } else {
-    const lastSlash = rawQuery.lastIndexOf('/');
-    if (lastSlash >= 0) {
-      const pathPart = rawQuery.slice(0, lastSlash);
-      const childFilter = rawQuery.slice(lastSlash + 1);
-      const matchingNodes = ccmdNodes.filter(n => n.path.toLowerCase().includes(pathPart));
-      for (const n of matchingNodes) {
-        const children = ccmdNodes.filter(c => {
-          const parts = c.path.split('/');
-          parts.pop();
-          return parts.join('/') === n.path;
-        });
-        for (const c of children) {
-          if (childFilter && !c.name.toLowerCase().includes(childFilter)) continue;
-          state.dropdownItems.push({ name: c.name, path: c.path, hlTerm: childFilter, isNode: true });
-        }
-      }
-    } else {
-      const matchingNodes = ccmdNodes.filter(n => n.path.toLowerCase().includes(rawQuery));
-      const seen = new Set();
-      for (const n of matchingNodes) {
-        const mdFiles = await listMdFiles(n.path);
-        const sorted = mdFiles.filter(f => f === 'CLAUDE.md').concat(mdFiles.filter(f => f !== 'CLAUDE.md'));
-        for (const f of sorted) {
-          const key = n.path + '/' + f;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          state.dropdownItems.push({ name: f, path: n.path, hlTerm: rawQuery });
-        }
-      }
+    // --- Node search mode: find query ---
+    // Shows matching nodes only (no md files)
+    const seen = new Set();
+    for (const n of ccmdNodes) {
+      if (!n.path.toLowerCase().includes(rawQuery)) continue;
+      if (seen.has(n.path)) continue;
+      seen.add(n.path);
+      state.dropdownItems.push({ name: n.name, path: n.path, hlTerm: rawQuery, isNode: true });
     }
   }
+
   if (state.dropdownItems.length === 0) { cmdDropdown.style.display = 'none'; state.dropdownIdx = -1; wrap.classList.remove('has-dropdown'); return; }
-  // Sort: exact > starts-with > word-boundary > contains
-  const sortQuery = rawQuery.split('/').pop() || rawQuery;
+  // Sort: exact > starts-with > word-boundary > name-contains > path-only
+  // In drill-down mode: nodes first, then files
+  const sortQuery = lastSlash >= 0 ? (rawQuery.slice(lastSlash + 1) || '') : rawQuery;
   const wordBoundaryMatch = (name, q) => {
+    if (!q) return false;
     const idx = name.indexOf(q);
     return idx > 0 && (name[idx - 1] === '-' || name[idx - 1] === '_');
   };
   state.dropdownItems.sort((a, b) => {
-    const aName = (a.isNode ? a.name : a.path.split('/').pop() || a.name).toLowerCase();
-    const bName = (b.isNode ? b.name : b.path.split('/').pop() || b.name).toLowerCase();
-    const rank = n => n === sortQuery ? 0 : n.startsWith(sortQuery) ? 1 : wordBoundaryMatch(n, sortQuery) ? 2 : 3;
+    if (lastSlash >= 0) {
+      const aNode = a.isNode ? 0 : 1;
+      const bNode = b.isNode ? 0 : 1;
+      if (aNode !== bNode) return aNode - bNode;
+    }
+    if (!sortQuery) return 0;
+    const aName = a.name.toLowerCase();
+    const bName = b.name.toLowerCase();
+    const rank = n => n === sortQuery ? 0 : n.startsWith(sortQuery) ? 1 : wordBoundaryMatch(n, sortQuery) ? 2 : n.includes(sortQuery) ? 3 : 4;
     return rank(aName) - rank(bName);
   });
   state.dropdownItems = state.dropdownItems.slice(0, 30);
   cmdDropdown.innerHTML = state.dropdownItems.map((f, i) => {
-    const nameHtml = f.isNode ? highlightMatch(f.name, f.hlTerm) : f.name;
-    const pathHtml = f.isNode ? f.path : highlightMatch(f.path, f.hlTerm);
+    const nameHtml = highlightMatch(f.name, f.hlTerm);
+    const pathHtml = highlightMatch(f.path, f.hlTerm);
     return '<div class="cmd-item' + (i === state.dropdownIdx ? ' active' : '') + '" data-idx="' + i + '">' +
       '<span class="cmd-name">' + nameHtml + '</span>' +
       '<span class="cmd-path">' + pathHtml + '</span></div>';
@@ -210,8 +224,12 @@ async function selectDropdownItem(idx) {
     layout();
   }
   closeCmdBar(false);
-  const fileName = f.isNode ? 'CLAUDE.md' : f.name;
-  const content = await readMdFile(f.path, fileName);
+  let fileName = f.isNode ? 'CLAUDE.md' : f.name;
+  let content = await readMdFile(f.path, fileName);
+  if (content === null && f.isNode) {
+    fileName = 'DESIGN.md';
+    content = await readMdFile(f.path, fileName);
+  }
   if (content !== null) {
     state.selectedNodePath = f.path;
     state.selectedFileName = fileName;
@@ -295,12 +313,15 @@ cmdInput.addEventListener('keydown', e => {
     if (state.dropdownItems.length > 0) {
       if (state.dropdownIdx < 0) state.dropdownIdx = 0;
       const f = state.dropdownItems[state.dropdownIdx];
+      // Preserve path prefix from current input
+      const curMatch = cmdInput.value.match(/^find\s+(.*)/i);
+      const curQuery = curMatch ? curMatch[1] : '';
+      const curSlash = curQuery.lastIndexOf('/');
+      const prefix = curSlash >= 0 ? curQuery.slice(0, curSlash + 1) : '';
       if (f.isNode) {
-        cmdInput.value = 'find ' + f.name;
+        cmdInput.value = 'find ' + prefix + f.name + '/';
       } else {
-        const lastSlash = f.path.lastIndexOf('/');
-        const nodeName = lastSlash >= 0 ? f.path.slice(lastSlash + 1) : f.path;
-        cmdInput.value = 'find ' + nodeName;
+        cmdInput.value = 'find ' + prefix + f.name;
       }
       state.dropdownIdx = -1;
       updateGhost();
