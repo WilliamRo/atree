@@ -148,7 +148,12 @@ function inlineMd(s) {
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/`(.+?)`/g, '<code>$1</code>');
   s = s.replace(/\[([^\]]+)\]\((hub\/[^)]+)\)/g, '<a href="#" data-hub-link="$2" class="hub-link" title="$2">$1</a>');
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => {
+    if (/\.(pdf|png|jpg|jpeg|gif|svg|zip|tar|gz)$/i.test(url)) {
+      return '<span class="dead-link" title="Unsupported: ' + url + '">' + text + '</span>';
+    }
+    return '<a href="' + url + '" target="_blank" rel="noopener">' + text + '</a>';
+  });
   // Restore math slots
   s = s.replace(/\x00MATH(\d+)\x00/g, (_, idx) => mathSlots[parseInt(idx)]);
   return s;
