@@ -535,6 +535,30 @@ document.addEventListener('keydown', e => {
   }
   if (e.key === 'r') { reloadCcmd(); }
   if (e.key === 'R') { rescan(); }
+  if (e.key === 'F') {
+    if (!state.focusedPath) { showStatus('No focus set'); return; }
+    centerOnNode(state.focusedPath);
+    (async () => {
+      let content = await readMdFile(state.focusedPath, 'CLAUDE.md');
+      let fileName = 'CLAUDE.md';
+      if (content === null) {
+        content = await readMdFile(state.focusedPath, 'DESIGN.md');
+        fileName = 'DESIGN.md';
+      }
+      if (content !== null) {
+        state.selectedNodePath = state.focusedPath;
+        state.selectedFileName = fileName;
+        ccmdTitle.textContent = state.focusedPath + '/' + fileName;
+        ccmdBody.innerHTML = renderMarkdown(content);
+        ccmdPanel.style.display = 'flex';
+        jumpPush(state.focusedPath, fileName);
+        saveMdv();
+        updateToolbar();
+      }
+      draw();
+    })();
+    return;
+  }
   if (e.key === 'y') {
     const p = state.hoveredPath || state.selectedNodePath;
     if (p) { navigator.clipboard.writeText(p).then(() => showStatus('Copied: ' + p)); }
