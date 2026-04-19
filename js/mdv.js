@@ -160,14 +160,16 @@ function inlineMd(s) {
 }
 
 function splitTableRow(line) {
-  // Split on | but skip | inside backtick spans
+  // Split on | but skip | inside backtick spans or $...$ math spans
   const cells = [];
   let cur = '';
   let inBt = false;
+  let inMath = false;
   for (let j = 0; j < line.length; j++) {
     const ch = line[j];
-    if (ch === '`') { inBt = !inBt; cur += ch; }
-    else if (ch === '|' && !inBt) { cells.push(cur); cur = ''; }
+    if (ch === '`' && !inMath) { inBt = !inBt; cur += ch; }
+    else if (ch === '$' && !inBt) { inMath = !inMath; cur += ch; }
+    else if (ch === '|' && !inBt && !inMath) { cells.push(cur); cur = ''; }
     else { cur += ch; }
   }
   cells.push(cur);
