@@ -19,6 +19,7 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 - Canvas-based radial tree layout with smooth zoom and pan
 - Click any node to view its CLAUDE.md; right-click to browse all .md files
 - Side panel Markdown viewer with resizing, font scaling, and left/right positioning
+- Cross-file Markdown links: any link of the form `[text](<root>/sub/.../file.md)` resolves within the active tree (the first segment is treated as a root marker)
 - Command palette (`:`) with tab auto-completion, ghost text, and file finder
 - Find files by full path (`find courses/bsp/`) or node name (`find hub`); search pierces collapsed subtrees
 - Pin nodes as "collapse by default" via right-click; set a "current focus" with gold highlight
