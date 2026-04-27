@@ -432,14 +432,11 @@ document.addEventListener('keydown', e => {
   if (document.getElementById('color-picker').style.display === 'block') {
     return;
   }
-  // Edit mode: only allow font size (+/-) and Escape (handled by mdv cancel)
-  if (isEditMode()) {
-    if (e.key === '+' || e.key === '=' || e.key === '-') {
-      // fall through to font size handling below
-    } else {
-      return;
-    }
-  }
+  // Edit mode: disable all global keyboard shortcuts. Bare keys collide with
+  // text input; modifier-combined ones (Ctrl+o/Ctrl+i jump nav) would navigate
+  // away from the buffer and lose unsaved edits. Font size remains accessible
+  // via the toolbar +/- buttons. Escape is handled by mdv cancel.
+  if (isEditMode()) return;
   if (state.cmdBarOpen) return;
   if (e.key === 'Escape') {
     ctxMenu.style.display = 'none';

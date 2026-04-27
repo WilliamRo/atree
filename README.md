@@ -68,6 +68,8 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 | d | Toggle viewer |
 | r | Reload file |
 
+In edit mode (Edit button on the viewer), all global keyboard shortcuts are disabled so they don't collide with text input. Use the toolbar `+/-` buttons for font size while editing.
+
 ### Global
 
 | Key | Action |
