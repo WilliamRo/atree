@@ -137,7 +137,14 @@ function renderInlineMath(tex) {
 }
 
 function inlineMd(s) {
-  // Extract inline math $...$ before escaping (protect from HTML escape)
+  // Extract inline code and math before escaping so emphasis does not affect them.
+  const codeSlots = [];
+  s = s.replace(/`([^`]+?)`/g, (_, code) => {
+    const idx = codeSlots.length;
+    codeSlots.push('<code>' + escHtml(code) + '</code>');
+    return '\x00CODE' + idx + '\x00';
+  });
+
   const mathSlots = [];
   s = s.replace(/\$([^\$]+?)\$/g, (_, tex) => {
     const idx = mathSlots.length;
@@ -146,7 +153,7 @@ function inlineMd(s) {
   });
   s = escHtml(s);
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  s = s.replace(/`(.+?)`/g, '<code>$1</code>');
+  s = s.replace(/(^|[^*])\*([^\s*](?:[^*\n]*?[^\s*])?)\*(?!\*)/g, '$1<em>$2</em>');
   // Root-rooted cross-file md link: <root_marker>/<sub>/.../*.md
   // First segment is a root marker (any identifier without slash/paren/colon/whitespace);
   // it gets substituted with the active root name when the link is followed.
@@ -157,7 +164,8 @@ function inlineMd(s) {
     }
     return '<a href="' + url + '" target="_blank" rel="noopener">' + text + '</a>';
   });
-  // Restore math slots
+  // Restore protected inline spans.
+  s = s.replace(/\x00CODE(\d+)\x00/g, (_, idx) => codeSlots[parseInt(idx)]);
   s = s.replace(/\x00MATH(\d+)\x00/g, (_, idx) => mathSlots[parseInt(idx)]);
   return s;
 }
