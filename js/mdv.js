@@ -599,7 +599,9 @@ async function onAddrSegClick(seg, idx, parts) {
   const path = parts.slice(0, idx + 1).join('/');
   const parentPath = parts.slice(0, idx).join('/');
   const siblings = getSiblingNodes(path);
-  if (siblings.length === 0) return;
+  const ownMds = await listMdFiles(path);
+  const sortedOwnMds = ownMds.filter(f => f === 'CLAUDE.md').concat(ownMds.filter(f => f !== 'CLAUDE.md'));
+  if (siblings.length === 0 && sortedOwnMds.length === 0) return;
   const items = siblings.map(name => {
     const sibPath = parentPath + '/' + name;
     const isCurrent = name === parts[idx];
@@ -609,7 +611,29 @@ async function onAddrSegClick(seg, idx, parts) {
       cls: isCurrent ? (leaf ? 'current-leaf' : 'current-branch') : ''
     };
   });
+  if (sortedOwnMds.length > 0) {
+    if (siblings.length > 0) items.push({ isSep: true, label: 'markdown' });
+    for (const md of sortedOwnMds) {
+      const isCurrent = path === state.selectedNodePath && md === state.selectedFileName;
+      items.push({ name: md, cls: isCurrent ? 'current-file' : '' });
+    }
+  }
   showAddrDropdown(anchorId, seg, items, async (name) => {
+    if (sortedOwnMds.includes(name)) {
+      const content = await readMdFile(path, name);
+      if (content !== null) {
+        state.selectedNodePath = path;
+        state.selectedFileName = name;
+        ccmdTitle.textContent = path + '/' + name;
+        ccmdBody.innerHTML = renderMarkdown(content);
+        ccmdPanel.style.display = 'flex';
+        jumpPush(path, name);
+        saveMdv();
+        centerOnNode(path);
+        buildAddrBar();
+      }
+      return;
+    }
     const newPath = parentPath + '/' + name;
     const found = await findFirstMdNode(newPath);
     if (found) {
