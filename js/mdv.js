@@ -599,9 +599,9 @@ async function onAddrSegClick(seg, idx, parts) {
   const path = parts.slice(0, idx + 1).join('/');
   const parentPath = parts.slice(0, idx).join('/');
   const siblings = getSiblingNodes(path);
-  const ownMds = await listMdFiles(path);
-  const sortedOwnMds = ownMds.filter(f => f === 'CLAUDE.md').concat(ownMds.filter(f => f !== 'CLAUDE.md'));
-  if (siblings.length === 0 && sortedOwnMds.length === 0) return;
+  const parentMds = await listMdFiles(parentPath);
+  const sortedParentMds = parentMds.filter(f => f === 'CLAUDE.md').concat(parentMds.filter(f => f !== 'CLAUDE.md'));
+  if (siblings.length === 0 && sortedParentMds.length === 0) return;
   const items = siblings.map(name => {
     const sibPath = parentPath + '/' + name;
     const isCurrent = name === parts[idx];
@@ -611,25 +611,25 @@ async function onAddrSegClick(seg, idx, parts) {
       cls: isCurrent ? (leaf ? 'current-leaf' : 'current-branch') : ''
     };
   });
-  if (sortedOwnMds.length > 0) {
+  if (sortedParentMds.length > 0) {
     if (siblings.length > 0) items.push({ isSep: true, label: 'markdown' });
-    for (const md of sortedOwnMds) {
-      const isCurrent = path === state.selectedNodePath && md === state.selectedFileName;
+    for (const md of sortedParentMds) {
+      const isCurrent = parentPath === state.selectedNodePath && md === state.selectedFileName;
       items.push({ name: md, cls: isCurrent ? 'current-file' : '' });
     }
   }
   showAddrDropdown(anchorId, seg, items, async (name) => {
-    if (sortedOwnMds.includes(name)) {
-      const content = await readMdFile(path, name);
+    if (sortedParentMds.includes(name)) {
+      const content = await readMdFile(parentPath, name);
       if (content !== null) {
-        state.selectedNodePath = path;
+        state.selectedNodePath = parentPath;
         state.selectedFileName = name;
-        ccmdTitle.textContent = path + '/' + name;
+        ccmdTitle.textContent = parentPath + '/' + name;
         ccmdBody.innerHTML = renderMarkdown(content);
         ccmdPanel.style.display = 'flex';
-        jumpPush(path, name);
+        jumpPush(parentPath, name);
         saveMdv();
-        centerOnNode(path);
+        centerOnNode(parentPath);
         buildAddrBar();
       }
       return;
