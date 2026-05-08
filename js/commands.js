@@ -15,6 +15,7 @@ import {
   restoreRootState, jumpTo, saveJumpList,
   getChildNodes, nodeHasCcmd, findFirstMdNode,
   isEditMode, tryExitEditMode,
+  openMd, switchTabBy, loadActiveTab, renderTabs,
 } from './mdv.js';
 
 // --- Command bar DOM refs ---
@@ -223,7 +224,8 @@ async function updateDropdown() {
   });
 }
 
-async function selectDropdownItem(idx) {
+async function selectDropdownItem(idx, opts) {
+  opts = opts || {};
   if (idx < 0 || idx >= state.dropdownItems.length) return;
   const f = state.dropdownItems[idx];
   if (f.isGoto) {
@@ -252,21 +254,9 @@ async function selectDropdownItem(idx) {
   }
   closeCmdBar(false);
   let fileName = f.isNode ? 'CLAUDE.md' : f.name;
-  let content = await readMdFile(f.path, fileName);
-  if (content === null && f.isNode) {
-    fileName = 'DESIGN.md';
-    content = await readMdFile(f.path, fileName);
-  }
-  if (content !== null) {
-    state.selectedNodePath = f.path;
-    state.selectedFileName = fileName;
-    ccmdTitle.textContent = f.path + '/' + fileName;
-    ccmdBody.innerHTML = renderMarkdown(content);
-    ccmdPanel.style.display = 'flex';
-    jumpPush(f.path, fileName);
-    saveMdv();
-    centerOnNode(f.path);
-    updateToolbar();
+  let ok = await openMd(f.path, fileName, { newTab: !!opts.newTab, center: true });
+  if (!ok && f.isNode) {
+    await openMd(f.path, 'DESIGN.md', { newTab: !!opts.newTab, center: true });
   }
 }
 
@@ -373,7 +363,7 @@ cmdInput.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeCmdBar(true); e.stopPropagation(); return; }
   if (e.key === 'Enter') {
     if (state.dropdownItems.length > 0) {
-      selectDropdownItem(state.dropdownIdx < 0 ? 0 : state.dropdownIdx);
+      selectDropdownItem(state.dropdownIdx < 0 ? 0 : state.dropdownIdx, { newTab: e.ctrlKey || e.metaKey });
       e.stopPropagation();
       return;
     }
@@ -395,8 +385,10 @@ cmdInput.addEventListener('keydown', e => {
       state.selectedNodePath = null;
       state.selectedFileName = null;
       state.jumpList = []; state.jumpIdx = -1;
+      state.tabs = []; state.activeTabIdx = -1;
       state.camX = 0; state.camY = 0; state.zoom = 1;
       ccmdPanel.style.display = 'none';
+      renderTabs();
       promptEl.style.display = '';
       canvasCtx.clearRect(0, 0, state.W, state.H);
       showStatus('Cleared');
@@ -485,25 +477,15 @@ document.addEventListener('keydown', e => {
     if (ccmdPanel.style.display === 'flex') {
       ccmdPanel.style.display = 'none';
       draw();
-    } else {
-      try {
-        const s = JSON.parse(localStorage.getItem(nsKey('hub-tree-mdv')));
-        if (!s || !s.viewPath || !s.viewFile) return;
-        if (state.dirHandle) {
-          (async () => {
-            const content = await readMdFile(s.viewPath, s.viewFile);
-            if (content !== null) {
-              state.selectedNodePath = s.viewPath;
-              state.selectedFileName = s.viewFile;
-              ccmdTitle.textContent = s.viewPath + '/' + s.viewFile;
-              ccmdBody.innerHTML = renderMarkdown(content);
-              ccmdPanel.style.display = 'flex';
-              draw();
-            }
-          })();
-        }
-      } catch (e) {}
+    } else if (state.tabs.length > 0 && state.dirHandle) {
+      (async () => { await loadActiveTab(); draw(); })();
     }
+    return;
+  }
+  // Tab switch — bare , and . (left / right). Edit-mode block above already covers typing collisions.
+  if ((e.key === ',' || e.key === '.') && ccmdPanel.style.display === 'flex' && state.tabs.length > 1) {
+    e.preventDefault();
+    switchTabBy(e.key === ',' ? -1 : 1);
     return;
   }
   if (e.key >= '1' && e.key <= '7') {
@@ -536,22 +518,8 @@ document.addEventListener('keydown', e => {
     if (!state.focusedPath) { showStatus('No focus set'); return; }
     centerOnNode(state.focusedPath);
     (async () => {
-      let content = await readMdFile(state.focusedPath, 'CLAUDE.md');
-      let fileName = 'CLAUDE.md';
-      if (content === null) {
-        content = await readMdFile(state.focusedPath, 'DESIGN.md');
-        fileName = 'DESIGN.md';
-      }
-      if (content !== null) {
-        state.selectedNodePath = state.focusedPath;
-        state.selectedFileName = fileName;
-        ccmdTitle.textContent = state.focusedPath + '/' + fileName;
-        ccmdBody.innerHTML = renderMarkdown(content);
-        ccmdPanel.style.display = 'flex';
-        jumpPush(state.focusedPath, fileName);
-        saveMdv();
-        updateToolbar();
-      }
+      let ok = await openMd(state.focusedPath, 'CLAUDE.md', { center: true });
+      if (!ok) await openMd(state.focusedPath, 'DESIGN.md', { center: true });
       draw();
     })();
     return;

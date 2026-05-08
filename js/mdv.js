@@ -1,11 +1,11 @@
-// mdv.js — markdown renderer, viewer panel, toolbar, address bar, jump list
+// mdv.js — markdown renderer, viewer panel, toolbar, address bar, tabs, jump list
 import {
-  state, ccmdPanel, ccmdTitle, ccmdBody, ctxMenu, helpPanel, hintEl, ccmdDrag, nsKey,
+  state, ccmdPanel, ccmdTitle, ccmdBody, ctxMenu, helpPanel, hintEl, ccmdDrag, ccmdTabs, nsKey,
   readMdFile, listMdFiles, writeMdFile, showStatus, setActiveRoot, saveHandle, getTopChildren, saveHistory, loadHistory,
 } from './core.js';
 import {
   setMdvCallbacks, draw, layout, centerOnNode, saveView, scanAndRender,
-  loadView, loadPinned, loadFocus, findHasCcmd,
+  loadView, loadPinned, loadFocus, findHasCcmd, findHasDf,
 } from './tree.js';
 
 // --- Minimal markdown renderer ---
@@ -203,15 +203,248 @@ function renderTable(lines) {
   return html + '</table>';
 }
 
+// --- Tabs (active-tab mirror, persistence, switch/close, render) ---
+
+function getActiveTab() {
+  if (state.activeTabIdx < 0 || state.activeTabIdx >= state.tabs.length) return null;
+  return state.tabs[state.activeTabIdx];
+}
+
+// Mirror active tab → state.selectedNodePath / selectedFileName / jumpList / jumpIdx
+// (legacy fields used widely across the codebase).
+function syncFromActiveTab() {
+  const t = getActiveTab();
+  if (!t) {
+    state.selectedNodePath = null;
+    state.selectedFileName = null;
+    state.jumpList = [];
+    state.jumpIdx = -1;
+    return;
+  }
+  state.selectedNodePath = t.nodePath;
+  state.selectedFileName = t.fileName;
+  state.jumpList = t.jumpList;
+  state.jumpIdx = t.jumpIdx;
+}
+
+// Inverse: copy mirror → active tab. Call after mutating jumpList/jumpIdx in place.
+function commitToActiveTab() {
+  const t = getActiveTab();
+  if (!t) return;
+  t.nodePath = state.selectedNodePath;
+  t.fileName = state.selectedFileName;
+  t.jumpList = state.jumpList;
+  t.jumpIdx = state.jumpIdx;
+}
+
+// Open the active root's CLAUDE.md (or DESIGN.md fallback) in a new tab — the "+ button" homepage.
+export async function openRootHome(opts) {
+  opts = opts || {};
+  if (!state.treeData) return false;
+  const rootName = state.treeData.name;
+  const fileName = findHasCcmd(rootName) ? 'CLAUDE.md' : (findHasDf(rootName) ? 'DESIGN.md' : null);
+  if (!fileName) {
+    showStatus('Root has no CLAUDE.md or DESIGN.md');
+    return false;
+  }
+  return await openMd(rootName, fileName, { newTab: opts.newTab !== false, center: !!opts.center });
+}
+
+export function renderTabs() {
+  if (!ccmdTabs) return;
+  if (state.tabs.length === 0) {
+    ccmdTabs.innerHTML = '';
+    ccmdTabs.style.display = 'none';
+    return;
+  }
+  ccmdTabs.style.display = 'flex';
+  ccmdTabs.innerHTML = '';
+  state.tabs.forEach((t, i) => {
+    const tab = document.createElement('div');
+    tab.className = 'ccmd-tab' + (i === state.activeTabIdx ? ' active' : '');
+    tab.title = t.nodePath + '/' + t.fileName;
+    const label = document.createElement('span');
+    label.className = 'ccmd-tab-label';
+    label.textContent = t.nodePath.split('/').pop();
+    tab.appendChild(label);
+    const close = document.createElement('span');
+    close.className = 'ccmd-tab-close';
+    close.textContent = '×';
+    close.title = 'Close tab';
+    close.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (state.editMode) return;
+      closeTab(i);
+    });
+    tab.appendChild(close);
+    tab.addEventListener('click', () => {
+      if (state.editMode) return;
+      switchTab(i);
+    });
+    tab.addEventListener('mousedown', e => {
+      if (e.button === 1) {
+        e.preventDefault();
+        if (state.editMode) return;
+        closeTab(i);
+      }
+    });
+    ccmdTabs.appendChild(tab);
+  });
+  // "+" button — opens root CLAUDE.md as a homepage in a new tab
+  const plus = document.createElement('div');
+  plus.className = 'ccmd-tab-new';
+  plus.textContent = '+';
+  plus.title = 'New tab (root homepage)';
+  plus.addEventListener('click', () => {
+    if (state.editMode) return;
+    openRootHome({ newTab: true });
+  });
+  ccmdTabs.appendChild(plus);
+  // Scroll active tab into view
+  const activeEl = ccmdTabs.children[state.activeTabIdx];
+  if (activeEl) activeEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+// Render the active tab's content into the body. Does not push to jumpList.
+async function loadActiveTab() {
+  const t = getActiveTab();
+  if (!t) {
+    ccmdPanel.style.display = 'none';
+    renderTabs();
+    return;
+  }
+  syncFromActiveTab();
+  if (!state.dirHandle) {
+    // Show stale title at least; content read deferred until handle restored
+    ccmdTitle.textContent = t.nodePath + '/' + t.fileName;
+    ccmdPanel.style.display = 'flex';
+    renderTabs();
+    updateToolbar();
+    return;
+  }
+  const content = await readMdFile(t.nodePath, t.fileName);
+  if (content === null) {
+    showStatus('Cannot read: ' + t.nodePath + '/' + t.fileName);
+  } else {
+    ccmdTitle.textContent = t.nodePath + '/' + t.fileName;
+    ccmdBody.innerHTML = renderMarkdown(content);
+  }
+  ccmdPanel.style.display = 'flex';
+  renderTabs();
+  updateToolbar();
+}
+
+export async function switchTab(idx) {
+  if (state.editMode) return;
+  if (idx < 0 || idx >= state.tabs.length) return;
+  if (idx === state.activeTabIdx) return;
+  // Freeze the OUTGOING tab's mirror state into its slot before reassigning the index.
+  // Skipping this lets saveMdv's auto-commit overwrite the new active tab with stale data.
+  commitToActiveTab();
+  state.activeTabIdx = idx;
+  // Mirror the INCOMING tab so any save in this function (and inside loadActiveTab) is consistent.
+  syncFromActiveTab();
+  saveMdv();
+  await loadActiveTab();
+  const t = getActiveTab();
+  if (t) centerOnNode(t.nodePath);
+}
+
+export function switchTabBy(delta) {
+  if (state.editMode) return;
+  const n = state.tabs.length;
+  if (n < 2) return;
+  let idx = state.activeTabIdx + delta;
+  // Wrap around
+  idx = ((idx % n) + n) % n;
+  switchTab(idx);
+}
+
+export async function closeTab(idx) {
+  if (state.editMode) return;
+  if (idx < 0 || idx >= state.tabs.length) return;
+  // If we're closing a non-active tab, the mirror still belongs to the active tab —
+  // commit it first so its in-progress jumpIdx etc. is preserved across the splice.
+  if (idx !== state.activeTabIdx) commitToActiveTab();
+  state.tabs.splice(idx, 1);
+  if (state.tabs.length === 0) {
+    state.activeTabIdx = -1;
+    syncFromActiveTab();
+    ccmdPanel.style.display = 'none';
+    saveMdv();
+    renderTabs();
+    return;
+  }
+  if (idx < state.activeTabIdx) {
+    state.activeTabIdx--;
+  } else if (idx === state.activeTabIdx) {
+    if (state.activeTabIdx >= state.tabs.length) state.activeTabIdx = state.tabs.length - 1;
+  }
+  // Mirror now points at a different tab — refresh before any save so commit is a no-op.
+  syncFromActiveTab();
+  saveMdv();
+  await loadActiveTab();
+  const t = getActiveTab();
+  if (t) centerOnNode(t.nodePath);
+}
+
+// Unified navigation entry point. opts: { newTab?: bool, center?: bool }
+export async function openMd(nodePath, fileName, opts) {
+  opts = opts || {};
+  if (state.editMode) return false;
+  if (!state.dirHandle) return false;
+  const content = await readMdFile(nodePath, fileName);
+  if (content === null) {
+    showStatus('Cannot read: ' + nodePath + '/' + fileName);
+    return false;
+  }
+  if (opts.newTab || state.tabs.length === 0 || state.activeTabIdx < 0) {
+    state.tabs.push({
+      nodePath, fileName,
+      jumpList: [{ path: nodePath, file: fileName }],
+      jumpIdx: 0,
+    });
+    state.activeTabIdx = state.tabs.length - 1;
+  } else {
+    const t = state.tabs[state.activeTabIdx];
+    t.nodePath = nodePath;
+    t.fileName = fileName;
+    // Truncate forward history past current position, then push (skip duplicate at top)
+    t.jumpList = t.jumpList.slice(0, t.jumpIdx + 1);
+    const top = t.jumpList[t.jumpList.length - 1];
+    if (!top || top.path !== nodePath || top.file !== fileName) {
+      t.jumpList.push({ path: nodePath, file: fileName });
+      t.jumpIdx = t.jumpList.length - 1;
+    }
+  }
+  syncFromActiveTab();
+  ccmdTitle.textContent = nodePath + '/' + fileName;
+  ccmdBody.innerHTML = renderMarkdown(content);
+  ccmdPanel.style.display = 'flex';
+  saveMdv();
+  renderTabs();
+  updateToolbar();
+  if (opts.center) centerOnNode(nodePath);
+  return true;
+}
+
 // --- Mdv state save/load ---
 
 export function saveMdv() {
+  // Mirror back to active tab before serializing
+  commitToActiveTab();
   localStorage.setItem(nsKey('hub-tree-mdv'), JSON.stringify({
     side: state.panelSide,
     width: parseInt(ccmdPanel.style.width) || 420,
     fontSize: state.ccmdFontSize,
-    viewPath: state.selectedNodePath,
-    viewFile: state.selectedFileName
+    tabs: state.tabs.map(t => ({
+      nodePath: t.nodePath,
+      fileName: t.fileName,
+      jumpList: t.jumpList,
+      jumpIdx: t.jumpIdx,
+    })),
+    activeTabIdx: state.activeTabIdx,
   }));
 }
 
@@ -222,10 +455,39 @@ function loadMdv() {
     if (s.fontSize) { state.ccmdFontSize = s.fontSize; ccmdPanel.style.fontSize = state.ccmdFontSize + 'px'; }
     if (s.width) ccmdPanel.style.width = s.width + 'px';
     if (s.side) state.panelSide = s.side;
+    if (Array.isArray(s.tabs)) {
+      state.tabs = s.tabs
+        .filter(t => t && t.nodePath && t.fileName)
+        .map(t => ({
+          nodePath: t.nodePath,
+          fileName: t.fileName,
+          jumpList: Array.isArray(t.jumpList) && t.jumpList.length > 0
+            ? t.jumpList
+            : [{ path: t.nodePath, file: t.fileName }],
+          jumpIdx: typeof t.jumpIdx === 'number' ? t.jumpIdx : 0,
+        }));
+      state.activeTabIdx = (typeof s.activeTabIdx === 'number' && s.activeTabIdx >= 0 && s.activeTabIdx < state.tabs.length)
+        ? s.activeTabIdx
+        : (state.tabs.length > 0 ? 0 : -1);
+    } else if (s.viewPath && s.viewFile) {
+      // Migration from pre-tabs schema: single view (+ separate legacy jump list, if any)
+      let jl = [{ path: s.viewPath, file: s.viewFile }];
+      let ji = 0;
+      try {
+        const oldJ = JSON.parse(localStorage.getItem(nsKey('hub-tree-jumplist')));
+        if (oldJ && Array.isArray(oldJ.list) && oldJ.list.length > 0) {
+          jl = oldJ.list;
+          ji = typeof oldJ.idx === 'number' ? oldJ.idx : (jl.length - 1);
+        }
+      } catch (e) {}
+      state.tabs = [{ nodePath: s.viewPath, fileName: s.viewFile, jumpList: jl, jumpIdx: ji }];
+      state.activeTabIdx = 0;
+    }
+    syncFromActiveTab();
   } catch (e) {}
 }
 
-// --- Jump list ---
+// --- Jump list (per active tab) ---
 
 export function jumpPush(path, file) {
   if (state.jumpIdx >= 0 && state.jumpIdx < state.jumpList.length) {
@@ -235,19 +497,13 @@ export function jumpPush(path, file) {
   state.jumpList = state.jumpList.slice(0, state.jumpIdx + 1);
   state.jumpList.push({ path, file });
   state.jumpIdx = state.jumpList.length - 1;
-  saveJumpList();
+  commitToActiveTab();
 }
 
-function loadJumpList() {
-  try {
-    const s = JSON.parse(localStorage.getItem(nsKey('hub-tree-jumplist')));
-    if (s) { state.jumpList = s.list || []; state.jumpIdx = s.idx ?? -1; }
-    else { state.jumpList = []; state.jumpIdx = -1; }
-  } catch (e) { state.jumpList = []; state.jumpIdx = -1; }
-}
-
+// Back-compat shim for callers that expect to persist after mutating jumpIdx in place.
 function saveJumpList() {
-  localStorage.setItem(nsKey('hub-tree-jumplist'), JSON.stringify({ list: state.jumpList, idx: state.jumpIdx }));
+  commitToActiveTab();
+  saveMdv();
 }
 
 async function jumpTo(entry) {
@@ -256,11 +512,14 @@ async function jumpTo(entry) {
   if (content === null) return;
   state.selectedNodePath = entry.path;
   state.selectedFileName = entry.file;
+  const t = getActiveTab();
+  if (t) { t.nodePath = entry.path; t.fileName = entry.file; }
   ccmdTitle.textContent = entry.path + '/' + entry.file;
   ccmdBody.innerHTML = renderMarkdown(content);
   ccmdPanel.style.display = 'flex';
   saveMdv();
   centerOnNode(entry.path);
+  renderTabs();
   updateToolbar();
 }
 
@@ -285,26 +544,19 @@ export async function restoreRootState() {
   loadView();
   loadPinned();
   loadFocus();
-  loadJumpList();
-  loadMdv();
-  // Restore mdv panel content
-  state.selectedNodePath = null;
-  state.selectedFileName = null;
+  // Reset tabs/mirror before loading new root's persisted state
+  state.tabs = [];
+  state.activeTabIdx = -1;
+  syncFromActiveTab();
   ccmdPanel.style.display = 'none';
-  try {
-    const s = JSON.parse(localStorage.getItem(nsKey('hub-tree-mdv')));
-    if (s && s.viewPath && s.viewFile) {
-      const content = await readMdFile(s.viewPath, s.viewFile);
-      if (content !== null) {
-        state.selectedNodePath = s.viewPath;
-        state.selectedFileName = s.viewFile;
-        ccmdTitle.textContent = s.viewPath + '/' + s.viewFile;
-        ccmdBody.innerHTML = renderMarkdown(content);
-        ccmdPanel.style.display = 'flex';
-        updateToolbar();
-      }
-    }
-  } catch (e) {}
+  loadMdv();
+  if (state.tabs.length > 0) {
+    await loadActiveTab();
+  } else {
+    // Fresh root with nothing saved — auto-open homepage so the user lands somewhere
+    await openRootHome({ newTab: true });
+    renderTabs();
+  }
 }
 
 // --- Render history ---
@@ -620,35 +872,13 @@ async function onAddrSegClick(seg, idx, parts) {
   }
   showAddrDropdown(anchorId, seg, items, async (name) => {
     if (sortedParentMds.includes(name)) {
-      const content = await readMdFile(parentPath, name);
-      if (content !== null) {
-        state.selectedNodePath = parentPath;
-        state.selectedFileName = name;
-        ccmdTitle.textContent = parentPath + '/' + name;
-        ccmdBody.innerHTML = renderMarkdown(content);
-        ccmdPanel.style.display = 'flex';
-        jumpPush(parentPath, name);
-        saveMdv();
-        centerOnNode(parentPath);
-        buildAddrBar();
-      }
+      await openMd(parentPath, name, { center: true });
       return;
     }
     const newPath = parentPath + '/' + name;
     const found = await findFirstMdNode(newPath);
     if (found) {
-      const content = await readMdFile(found.path, found.file);
-      if (content !== null) {
-        state.selectedNodePath = found.path;
-        state.selectedFileName = found.file;
-        ccmdTitle.textContent = found.path + '/' + found.file;
-        ccmdBody.innerHTML = renderMarkdown(content);
-        ccmdPanel.style.display = 'flex';
-        jumpPush(found.path, found.file);
-        saveMdv();
-        centerOnNode(found.path);
-        buildAddrBar();
-      }
+      await openMd(found.path, found.file, { center: true });
     } else {
       showStatus('No .md files in ' + name);
     }
@@ -689,31 +919,10 @@ async function onFileSegClick(seg) {
     const lc = leafChildren.find(c => c.name === name);
     if (lc) {
       const found = await findFirstMdNode(lc.path);
-      if (found) {
-        const content = await readMdFile(found.path, found.file);
-        if (content !== null) {
-          state.selectedNodePath = found.path;
-          state.selectedFileName = found.file;
-          ccmdTitle.textContent = found.path + '/' + found.file;
-          ccmdBody.innerHTML = renderMarkdown(content);
-          ccmdPanel.style.display = 'flex';
-          jumpPush(found.path, found.file);
-          saveMdv();
-          centerOnNode(found.path);
-          buildAddrBar();
-        }
-      }
+      if (found) await openMd(found.path, found.file, { center: true });
       return;
     }
-    const content = await readMdFile(state.selectedNodePath, name);
-    if (content !== null) {
-      state.selectedFileName = name;
-      ccmdTitle.textContent = state.selectedNodePath + '/' + name;
-      ccmdBody.innerHTML = renderMarkdown(content);
-      jumpPush(state.selectedNodePath, name);
-      saveMdv();
-      buildAddrBar();
-    }
+    if (state.selectedNodePath) await openMd(state.selectedNodePath, name);
   });
 }
 
@@ -722,9 +931,11 @@ async function onFileSegClick(seg) {
 document.getElementById('ccmd-close').addEventListener('click', () => {
   if (state.editMode) return; // block close during edit
   ccmdPanel.style.display = 'none';
-  state.selectedNodePath = null;
-  state.selectedFileName = null;
+  state.tabs = [];
+  state.activeTabIdx = -1;
+  syncFromActiveTab();
   saveMdv();
+  renderTabs();
 });
 
 // Right-click on md viewer to reload
@@ -738,7 +949,7 @@ ccmdBody.addEventListener('dblclick', () => {
   if (state.selectedNodePath) centerOnNode(state.selectedNodePath);
 });
 
-// Hub cross-node links
+// Root-rooted cross-node links
 ccmdBody.addEventListener('click', async e => {
   if (state.editMode) return;
   const link = e.target.closest('a[data-hub-link]');
@@ -748,25 +959,14 @@ ccmdBody.addEventListener('click', async e => {
   const parts = hubPath.split('/');
   const fileName = parts[parts.length - 1];
   const rootName = state.treeData ? state.treeData.name : '';
-  const nodePath = rootName + '/' + parts.slice(1, -1).join('/');
-  const content = await readMdFile(nodePath, fileName);
-  if (content !== null) {
-    state.selectedNodePath = nodePath;
-    state.selectedFileName = fileName;
-    ccmdTitle.textContent = nodePath + '/' + fileName;
-    ccmdBody.innerHTML = renderMarkdown(content);
-    jumpPush(nodePath, fileName);
-    saveMdv();
-    centerOnNode(nodePath);
-    updateToolbar();
-  } else {
-    showStatus('File not found: ' + hubPath);
-  }
+  const nodePath = rootName + (parts.length > 2 ? '/' + parts.slice(1, -1).join('/') : '');
+  const ok = await openMd(nodePath, fileName, { newTab: e.ctrlKey || e.metaKey, center: true });
+  if (!ok) showStatus('File not found: ' + hubPath);
 });
 
 // --- Init ---
 loadMdv();
-loadJumpList();
+renderTabs();
 
 // Panel side init
 if (state.panelSide === 'right') {
@@ -791,10 +991,13 @@ setMdvCallbacks({
   reloadCcmd,
   renderHistory,
   restoreRootState,
+  openMd,
+  loadActiveTab,
+  openRootHome,
 });
 
 // Export jumpTo and saveJumpList for commands.js
-export { jumpTo, saveJumpList };
+export { jumpTo, saveJumpList, loadActiveTab };
 
 // --- Edit mode ---
 const ccmdEditor = document.getElementById('ccmd-editor');

@@ -14,6 +14,9 @@ let _updateToolbar = null;
 let _reloadCcmd = null;
 let _renderHistory = null;
 let _restoreRootState = null;
+let _openMd = null;
+let _loadActiveTab = null;
+let _openRootHome = null;
 
 export function setMdvCallbacks(callbacks) {
   _renderMarkdown = callbacks.renderMarkdown;
@@ -23,6 +26,9 @@ export function setMdvCallbacks(callbacks) {
   _reloadCcmd = callbacks.reloadCcmd;
   _renderHistory = callbacks.renderHistory;
   _restoreRootState = callbacks.restoreRootState;
+  _openMd = callbacks.openMd;
+  _loadActiveTab = callbacks.loadActiveTab;
+  _openRootHome = callbacks.openRootHome;
 }
 
 // --- Directory scanning ---
@@ -62,6 +68,9 @@ export async function pickAndScan() {
     const ctx = await getTopChildren(state.dirHandle);
     await saveHistory(state.dirHandle, ctx);
     await scanAndRender();
+    // Switch mdv state to this root's namespace (otherwise stale tabs from a previous
+    // root would be re-saved under the new root's localStorage key on the next saveMdv).
+    if (_restoreRootState) await _restoreRootState();
   } catch (e) {
     if (e.name !== 'AbortError') console.error(e);
   }
@@ -505,19 +514,9 @@ function showCtxMenu(x, y, nodePath, mdFiles, isLeaf) {
       const item = document.createElement('div');
       item.className = 'ctx-item';
       item.textContent = f;
-      item.addEventListener('click', async () => {
+      item.addEventListener('click', async e => {
         ctxMenu.style.display = 'none';
-        const content = await readMdFile(nodePath, f);
-        if (content !== null) {
-          state.selectedNodePath = nodePath;
-          state.selectedFileName = f;
-          ccmdTitle.textContent = nodePath + '/' + f;
-          ccmdBody.innerHTML = _renderMarkdown(content);
-          ccmdPanel.style.display = 'flex';
-          _jumpPush(nodePath, f);
-          _saveMdv();
-          _updateToolbar();
-        }
+        await _openMd(nodePath, f, { newTab: e.ctrlKey || e.metaKey });
       });
       ctxMenu.appendChild(item);
     });
@@ -556,20 +555,10 @@ if (cached) {
     if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
       state.dirHandle = handle;
-      // Restore mdv viewing state
-      try {
-        const s = JSON.parse(localStorage.getItem(nsKey('hub-tree-mdv')));
-        if (s && s.viewPath && s.viewFile) {
-          const content = await readMdFile(s.viewPath, s.viewFile);
-          if (content !== null) {
-            state.selectedNodePath = s.viewPath;
-            state.selectedFileName = s.viewFile;
-            ccmdTitle.textContent = s.viewPath + '/' + s.viewFile;
-            ccmdBody.innerHTML = _renderMarkdown ? _renderMarkdown(content) : content;
-            ccmdPanel.style.display = 'flex';
-          }
-        }
-      } catch (e) {}
+      // Render the active tab's content (mdv.js loadMdv already populated state.tabs)
+      if (_loadActiveTab && state.tabs.length > 0) {
+        await _loadActiveTab();
+      }
     }
   } catch (e) {}
 })();
@@ -638,31 +627,20 @@ canvas.addEventListener('mouseup', async e => {
   if (e.button !== 0) return; // left-click only
   if (state.editMode) return; // block navigation during edit
   const dx = e.clientX - state.clickStartX, dy = e.clientY - state.clickStartY;
-  if (dx * dx + dy * dy < 9) {
-    const world = toWorld(e.clientX, e.clientY);
-    for (let i = state.nodes.length - 1; i >= 0; i--) {
-      const n = state.nodes[i];
-      if (!isVisible(i)) continue;
-      const ddx = world.x - n.x, ddy = world.y - n.y;
-      const hitR = n.r + 4 / state.zoom;
-      if (ddx * ddx + ddy * ddy < hitR * hitR) {
-        const hasCcmd = findHasCcmd(n.path);
-        const hasDf = findHasDf(n.path);
-        if (!hasCcmd && !hasDf) break;
-        const fileName = hasCcmd ? 'CLAUDE.md' : 'DESIGN.md';
-        state.selectedNodePath = n.path;
-        state.selectedFileName = fileName;
-        const content = await readMdFile(n.path, fileName);
-        if (content !== null) {
-          ccmdTitle.textContent = n.path + '/' + fileName;
-          ccmdBody.innerHTML = _renderMarkdown(content);
-        }
-        ccmdPanel.style.display = 'flex';
-        _jumpPush(n.path, fileName);
-        _saveMdv();
-        _updateToolbar();
-        break;
-      }
+  if (dx * dx + dy * dy >= 9) return;
+  const world = toWorld(e.clientX, e.clientY);
+  for (let i = state.nodes.length - 1; i >= 0; i--) {
+    const n = state.nodes[i];
+    if (!isVisible(i)) continue;
+    const ddx = world.x - n.x, ddy = world.y - n.y;
+    const hitR = n.r + 4 / state.zoom;
+    if (ddx * ddx + ddy * ddy < hitR * hitR) {
+      const hasCcmd = findHasCcmd(n.path);
+      const hasDf = findHasDf(n.path);
+      if (!hasCcmd && !hasDf) break;
+      const fileName = hasCcmd ? 'CLAUDE.md' : 'DESIGN.md';
+      await _openMd(n.path, fileName, { newTab: e.ctrlKey || e.metaKey });
+      break;
     }
   }
 });

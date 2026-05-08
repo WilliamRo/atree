@@ -22,6 +22,7 @@ export const ctxMenu = document.getElementById('ctx-menu');
 export const helpPanel = document.getElementById('help');
 export const hintEl = document.getElementById('hint');
 export const ccmdDrag = document.getElementById('ccmd-drag');
+export const ccmdTabs = document.getElementById('ccmd-tabs');
 
 // --- Shared mutable state ---
 export const state = {
@@ -30,12 +31,17 @@ export const state = {
   H: 0,
   treeData: null,
   dirHandle: null,
+  // Active tab's view (mirrored from state.tabs[state.activeTabIdx]; legacy fields used widely)
   selectedNodePath: null,
   selectedFileName: null,
   ccmdFontSize: 12,
   panelSide: 'left',
+  // Per-tab navigation state (mirrors active tab's jumpList/jumpIdx)
   jumpList: [],
   jumpIdx: -1,
+  // Tabs: each = { nodePath, fileName, jumpList: [{path, file}, ...], jumpIdx }
+  tabs: [],
+  activeTabIdx: -1,
   camX: 0,
   camY: 0,
   zoom: 1,

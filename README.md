@@ -19,6 +19,7 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 - Canvas-based radial tree layout with smooth zoom and pan
 - Click any node to view its CLAUDE.md; right-click to browse all .md files
 - Side panel Markdown viewer with resizing, font scaling, left/right positioning, and inline formatting for bold, italic, code, links, and math
+- Chrome-style tabs in the viewer: Ctrl+click a node / link / palette result to open in a new tab, click the `+` button for the root's CLAUDE.md as a homepage, switch with `,` / `.`, close with the tab's × or middle-click; Ctrl+O / Ctrl+I jump back/forward inside the active tab; picking a fresh root auto-opens its CLAUDE.md
 - Cross-file Markdown links: any link of the form `[text](<root>/sub/.../file.md)` resolves within the active tree (the first segment is treated as a root marker)
 - Command palette (`:`) with tab auto-completion, ghost text, and file finder
 - Find files by full path (`find courses/bsp/`) or node name (`find hub`); search pierces collapsed subtrees
@@ -64,9 +65,14 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 | Key | Action |
 |-----|--------|
 | +/- | Font size |
-| Ctrl+o/i | Jump back / forward |
+| Ctrl+o/i | Jump back / forward (per tab) |
+| ,/. | Switch tab left / right (wrap-around) |
+| Ctrl+click | Open node / link in a new tab |
+| Ctrl+Enter | Open palette result in a new tab |
+| + (tab strip) | Open root CLAUDE.md as a homepage in a new tab |
+| middle-click on tab | Close tab |
 | H/L | Move to left / right |
-| d | Toggle viewer |
+| d | Show / hide viewer |
 | r | Reload file |
 
 In edit mode (Edit button on the viewer), all global keyboard shortcuts are disabled so they don't collide with text input. Use the toolbar `+/-` buttons for font size while editing.
