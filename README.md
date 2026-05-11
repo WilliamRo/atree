@@ -49,6 +49,7 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 | mid-dblclick | Reset view |
 | middle-click | Node → expand / collapse |
 | right-click | Node → list .md files |
+| right-click | Empty space → rescan tree |
 | right-click | Viewer → reload file |
 | scroll | Zoom |
 

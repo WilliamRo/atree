@@ -682,12 +682,13 @@ canvas.addEventListener('mousedown', e => {
   }
 });
 
-// --- Right-click: context menu with .md files ---
+// --- Right-click: context menu with .md files, or rescan if on empty space ---
 canvas.addEventListener('contextmenu', async e => {
   e.preventDefault();
   if (state.editMode) return;
   ctxMenu.style.display = 'none';
   const world = toWorld(e.clientX, e.clientY);
+  let hit = false;
   for (let i = state.nodes.length - 1; i >= 0; i--) {
     const n = state.nodes[i];
     if (!isVisible(i)) continue;
@@ -696,9 +697,11 @@ canvas.addEventListener('contextmenu', async e => {
     if (dx * dx + dy * dy < hitR * hitR) {
       const mdFiles = await listMdFiles(n.path);
       showCtxMenu(e.clientX, e.clientY, n.path, mdFiles, n.isLeaf);
+      hit = true;
       break;
     }
   }
+  if (!hit) rescan();
 });
 
 // Dismiss context menu on click outside
