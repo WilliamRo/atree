@@ -40,23 +40,18 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 
 ## Shortcuts
 
-### Mouse
-
-| Key | Action |
-|-----|--------|
-| drag | Pan canvas |
-| left-click | Node → view CLAUDE.md / DESIGN.md |
-| mid-dblclick | Reset view |
-| middle-click | Node → expand / collapse |
-| right-click | Node → list .md files |
-| right-click | Empty space → rescan tree |
-| right-click | Viewer → reload file |
-| scroll | Zoom |
-
 ### Tree Viewer
 
 | Key | Action |
 |-----|--------|
+| drag | Pan canvas |
+| scroll | Zoom |
+| left-click | Node → view CLAUDE.md / DESIGN.md |
+| Ctrl+click | Node → open in new tab |
+| middle-click | Node → expand / collapse |
+| mid-dblclick | Reset view |
+| right-click | Node → list .md files |
+| right-click | Empty space → rescan tree |
 | 1-7 | Expand to level N |
 | h/j/k/l | Move left / down / up / right |
 | i/o | Zoom in / out |
@@ -65,14 +60,15 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 
 | Key | Action |
 |-----|--------|
+| right-click | Reload file |
+| Ctrl+click | Link → open in new tab |
+| middle-click | Tab → close |
 | +/- | Font size |
 | Ctrl+o/i | Jump back / forward (per tab) |
 | ,/. | Switch tab left / right (wrap-around) |
-| Ctrl+click | Open node / link in a new tab |
 | Ctrl+Enter | Open palette result in a new tab |
 | + (tab strip) | Open root CLAUDE.md as a homepage in a new tab |
-| middle-click on tab | Close tab |
-| H/L | Move to left / right |
+| H/L | Move viewer to left / right |
 | d | Show / hide viewer |
 | r | Reload file |
 
