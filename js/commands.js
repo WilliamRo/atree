@@ -560,7 +560,6 @@ document.addEventListener('keydown', e => {
     const show = helpPanel.style.display === 'none' || !helpPanel.style.display;
     if (show) {
       document.getElementById('storageInfo').textContent = 'localStorage: ' + getStorageInfo();
-      document.getElementById('help-root').textContent = state.dirHandle ? state.dirHandle.name : '(none)';
     }
     helpPanel.style.display = show ? 'block' : 'none';
     hintEl.style.display = show ? 'none' : 'block';
