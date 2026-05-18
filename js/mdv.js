@@ -154,6 +154,8 @@ function inlineMd(s) {
   s = escHtml(s);
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(^|[^*])\*([^\s*](?:[^*\n]*?[^\s*])?)\*(?!\*)/g, '$1<em>$2</em>');
+  // \comment{...} → inline red span (LaTeX-style annotation)
+  s = s.replace(/\\comment\{([^}]+)\}/g, '<span class="md-comment">$1</span>');
   // Root-rooted cross-file md link: <root_marker>/<sub>/.../*.md
   // First segment is a root marker (any identifier without slash/paren/colon/whitespace);
   // it gets substituted with the active root name when the link is followed.
