@@ -63,6 +63,7 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 | right-click | Reload file |
 | Ctrl+click | Link → open in new tab |
 | middle-click | Tab → close |
+| middle-click | Breadcrumb segment → open / toggle CLAUDE.md ↔ DESIGN.md |
 | +/- | Font size |
 | Ctrl+o/i | Jump back / forward (per tab) |
 | ,/. | Switch tab left / right (wrap-around) |

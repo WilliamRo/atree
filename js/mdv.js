@@ -744,6 +744,12 @@ function buildAddrBar() {
       e.stopPropagation();
       onAddrSegClick(seg, i, parts);
     });
+    seg.addEventListener('mousedown', e => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onAddrSegMiddleClick(i, parts);
+    });
     addrBarInner.appendChild(seg);
   });
 
@@ -885,6 +891,24 @@ async function onAddrSegClick(seg, idx, parts) {
       showStatus('No .md files in ' + name);
     }
   });
+}
+
+// Middle-click a breadcrumb segment: open that node's CLAUDE.md / DESIGN.md.
+// If the open file is already this node's ccmd/df, toggle ccmd <-> df instead.
+// Does nothing when the target file does not exist.
+async function onAddrSegMiddleClick(idx, parts) {
+  if (state.editMode) return;
+  const path = parts.slice(0, idx + 1).join('/');
+  const hasCcmd = findHasCcmd(path);
+  const hasDf = findHasDf(path);
+  if (!hasCcmd && !hasDf) return;
+  const cur = state.selectedNodePath === path ? state.selectedFileName : null;
+  let target;
+  if (cur === 'CLAUDE.md') target = hasDf ? 'DESIGN.md' : null;
+  else if (cur === 'DESIGN.md') target = hasCcmd ? 'CLAUDE.md' : null;
+  else target = hasCcmd ? 'CLAUDE.md' : 'DESIGN.md';
+  if (!target) return;
+  await openMd(path, target, { center: true });
 }
 
 async function onFileSegClick(seg) {
