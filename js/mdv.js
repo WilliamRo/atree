@@ -1,7 +1,7 @@
 // mdv.js — markdown renderer, viewer panel, toolbar, address bar, tabs, jump list
 import {
   state, ccmdPanel, ccmdTitle, ccmdBody, ctxMenu, helpPanel, hintEl, ccmdDrag, ccmdTabs, nsKey,
-  readMdFile, listMdFiles, writeMdFile, showStatus, setActiveRoot, saveHandle, getTopChildren, saveHistory, loadHistory,
+  readMdFile, listMdFiles, writeMdFile, getDirHandle, showStatus, setActiveRoot, saveHandle, getTopChildren, saveHistory, loadHistory,
 } from './core.js';
 import {
   setMdvCallbacks, draw, layout, centerOnNode, saveView, scanAndRender,
@@ -151,6 +151,21 @@ function inlineMd(s) {
     mathSlots.push(renderInlineMath(tex));
     return '\x00MATH' + idx + '\x00';
   });
+
+  // Images — extract before emphasis/links so alt text and the surrounding
+  // markdown processing never touch them. Two forms render as an image:
+  //   ![alt](url)            — standard image syntax (any url)
+  //   [text](url.png|jpg|…)  — a plain link whose target is an image file
+  // Ordinary links (incl. .md hub links, .pdf, .zip) fall through to the link
+  // passes below. Local paths get a placeholder hydrated async (see hydrateLocalImages).
+  const imgSlots = [];
+  s = s.replace(/(!?)\[([^\]]*)\]\(([^)\s]+)\)/g, (m, bang, alt, url) => {
+    if (!bang && !IMG_EXT.test(url)) return m; // ordinary link — leave for later passes
+    const idx = imgSlots.length;
+    imgSlots.push(buildImgHtml(alt, url));
+    return '\x00IMG' + idx + '\x00';
+  });
+
   s = escHtml(s);
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(^|[^*])\*([^\s*](?:[^*\n]*?[^\s*])?)\*(?!\*)/g, '$1<em>$2</em>');
@@ -169,7 +184,105 @@ function inlineMd(s) {
   // Restore protected inline spans.
   s = s.replace(/\x00CODE(\d+)\x00/g, (_, idx) => codeSlots[parseInt(idx)]);
   s = s.replace(/\x00MATH(\d+)\x00/g, (_, idx) => mathSlots[parseInt(idx)]);
+  s = s.replace(/\x00IMG(\d+)\x00/g, (_, idx) => imgSlots[parseInt(idx)]);
   return s;
+}
+
+// Image file extensions: links targeting these render inline as images.
+const IMG_EXT = /\.(png|jpe?g|gif|svg|webp|bmp|avif)$/i;
+
+function escAttr(s) {
+  return escHtml(s).replace(/"/g, '&quot;');
+}
+
+// Build an <img> tag. Remote URLs (http(s)://, protocol-relative //, data:)
+// get a direct src. Local relative paths are deferred: emit a placeholder with
+// the raw path in data-img-rel, filled in later by hydrateLocalImages.
+function buildImgHtml(alt, url) {
+  const altEsc = escAttr(alt);
+  const isRemote = /^(https?:)?\/\//i.test(url) || /^data:/i.test(url);
+  if (isRemote) {
+    return `<img class="md-img" src="${escAttr(url)}" alt="${altEsc}" loading="lazy">`;
+  }
+  return `<img class="md-img md-img-local" data-img-rel="${escAttr(url)}" alt="${altEsc}">`;
+}
+
+// Candidate { dirPath, fileName } node coordinates for a local image path,
+// in priority order. We don't guess relative-vs-root-rooted from syntax (a path
+// like `ch09_src/x.png` is ambiguous); instead we list both and let the caller
+// pick the first that exists on disk:
+//   1. relative to baseNodePath (the .md file's directory) — honours '.', '..';
+//   2. root-rooted (multi-segment only): first segment is a root marker,
+//      substituted with the active root name, like mdv's hub .md cross-links.
+function imgPathCandidates(baseNodePath, rel) {
+  const cands = [];
+  // (1) relative to the .md file's directory
+  {
+    const parts = baseNodePath.split('/');
+    for (const seg of rel.split('/')) {
+      if (seg === '' || seg === '.') continue;
+      if (seg === '..') { if (parts.length > 1) parts.pop(); continue; }
+      parts.push(seg);
+    }
+    const fileName = parts.pop();
+    cands.push({ dirPath: parts.join('/'), fileName });
+  }
+  // (2) root-rooted — only for multi-segment paths not explicitly relative
+  if (rel.includes('/') && !rel.startsWith('./') && !rel.startsWith('../')) {
+    const rootName = state.treeData ? state.treeData.name : (baseNodePath.split('/')[0] || '');
+    const segs = rel.split('/').filter(s => s !== '');
+    const parts = [rootName, ...segs.slice(1)];
+    const fileName = parts.pop();
+    cands.push({ dirPath: parts.join('/'), fileName });
+  }
+  return cands;
+}
+
+async function readImgFile(cand) {
+  const dir = await getDirHandle(cand.dirPath);
+  if (!dir) return null;
+  try {
+    const fh = await dir.getFileHandle(cand.fileName);
+    return await fh.getFile();
+  } catch (e) { return null; }
+}
+
+// Object URLs created for the currently rendered local images. Revoked and
+// rebuilt on every render so we never leak blob handles.
+let localImgUrls = [];
+
+// Resolve every local-image placeholder in `container` to a blob URL read from
+// the file system, trying each candidate path until one exists on disk.
+async function hydrateLocalImages(container, baseNodePath) {
+  for (const url of localImgUrls) { try { URL.revokeObjectURL(url); } catch (e) {} }
+  localImgUrls = [];
+  if (!state.dirHandle || !baseNodePath) return;
+  const imgs = container.querySelectorAll('img.md-img-local[data-img-rel]');
+  for (const img of imgs) {
+    const rel = img.getAttribute('data-img-rel');
+    img.removeAttribute('data-img-rel');
+    let file = null;
+    for (const cand of imgPathCandidates(baseNodePath, rel)) {
+      file = await readImgFile(cand);
+      if (file) break;
+    }
+    if (file) {
+      const objUrl = URL.createObjectURL(file);
+      localImgUrls.push(objUrl);
+      img.src = objUrl;
+    } else {
+      img.classList.add('md-img-broken');
+      img.alt = (img.alt ? img.alt + ' ' : '') + '[missing: ' + rel + ']';
+      img.title = 'Image not found: ' + rel;
+    }
+  }
+}
+
+// Render markdown into the viewer body, then hydrate any local images relative
+// to nodePath. Single entry point so every render path picks up images.
+function renderBody(content, nodePath) {
+  ccmdBody.innerHTML = renderMarkdown(content);
+  hydrateLocalImages(ccmdBody, nodePath);
 }
 
 function splitTableRow(line) {
@@ -330,7 +443,7 @@ async function loadActiveTab() {
     showStatus('Cannot read: ' + t.nodePath + '/' + t.fileName);
   } else {
     ccmdTitle.textContent = t.nodePath + '/' + t.fileName;
-    ccmdBody.innerHTML = renderMarkdown(content);
+    renderBody(content, t.nodePath);
   }
   ccmdPanel.style.display = 'flex';
   renderTabs();
@@ -422,7 +535,7 @@ export async function openMd(nodePath, fileName, opts) {
   }
   syncFromActiveTab();
   ccmdTitle.textContent = nodePath + '/' + fileName;
-  ccmdBody.innerHTML = renderMarkdown(content);
+  renderBody(content, nodePath);
   ccmdPanel.style.display = 'flex';
   saveMdv();
   renderTabs();
@@ -517,7 +630,7 @@ async function jumpTo(entry) {
   const t = getActiveTab();
   if (t) { t.nodePath = entry.path; t.fileName = entry.file; }
   ccmdTitle.textContent = entry.path + '/' + entry.file;
-  ccmdBody.innerHTML = renderMarkdown(content);
+  renderBody(content, entry.path);
   ccmdPanel.style.display = 'flex';
   saveMdv();
   centerOnNode(entry.path);
@@ -534,7 +647,7 @@ export async function reloadCcmd() {
     const content = await readMdFile(state.selectedNodePath, fname);
     if (content === null) return;
     ccmdTitle.textContent = state.selectedNodePath + '/' + fname;
-    ccmdBody.innerHTML = renderMarkdown(content);
+    renderBody(content, state.selectedNodePath);
     showStatus(fname + ' reloaded');
     updateToolbar();
   } catch (e) {}
@@ -1095,7 +1208,7 @@ btnSave.addEventListener('click', async () => {
   if (ok) {
     showStatus('Saved: ' + state.selectedFileName);
     // Re-render with new content
-    ccmdBody.innerHTML = renderMarkdown(ccmdEditor.value);
+    renderBody(ccmdEditor.value, state.selectedNodePath);
     exitEditMode();
   } else {
     showStatus('Save failed');

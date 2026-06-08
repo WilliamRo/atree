@@ -18,7 +18,8 @@ But file explorers show you a flat list. They don't reveal the shape of your kno
 
 - Canvas-based radial tree layout with smooth zoom and pan
 - Click any node to view its CLAUDE.md; right-click to browse all .md files
-- Side panel Markdown viewer with resizing, font scaling, left/right positioning, and inline formatting for bold, italic, code, links, and math
+- Side panel Markdown viewer with resizing, font scaling, left/right positioning, and inline formatting for bold, italic, code, links, math, and images
+- Inline images via `![alt](src)` (and plain links to image files): remote URLs load directly; local paths resolve against the `.md` file's own folder, or as a root-rooted `<root>/sub/.../pic.png` path — whichever exists on disk
 - Chrome-style tabs in the viewer: Ctrl+click a node / link / palette result to open in a new tab, click the `+` button for the root's CLAUDE.md as a homepage, switch with `,` / `.`, close with the tab's × or middle-click; Ctrl+O / Ctrl+I jump back/forward inside the active tab; picking a fresh root auto-opens its CLAUDE.md
 - Cross-file Markdown links: any link of the form `[text](<root>/sub/.../file.md)` resolves within the active tree (the first segment is treated as a root marker)
 - Command palette (`:`) with tab auto-completion, ghost text, and file finder
