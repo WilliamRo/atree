@@ -97,6 +97,39 @@ export function renderMarkdown(md) {
       continue;
     }
 
+    // Collapsible panel (cpanel): <details ...> ... </details>. Held out of the
+    // paragraph path; the <summary> is emitted with inline markdown applied, and
+    // the body is rendered recursively into a .panel-body. See design/mdv.md s9.1.
+    if (line.trimStart().startsWith('<details')) {
+      closeList();
+      const openTag = line.trim();
+      // Single-line <details>...</details> — pass through untouched.
+      if (openTag.includes('</details>')) { html += openTag; continue; }
+      // Collect the block up to the matching </details> (nesting-aware).
+      const inner = [];
+      let depth = 1;
+      while (i + 1 < lines.length) {
+        const l = lines[++i];
+        const t = l.trim();
+        if (t.startsWith('<details')) depth++;
+        if (t.startsWith('</details>')) { depth--; if (depth === 0) break; }
+        inner.push(l);
+      }
+      // Pull out the first <summary>...</summary> line; the rest is body markdown.
+      // The summary is emitted verbatim (its inner HTML, e.g. <strong>, passes
+      // through untouched), matching how the book authors panel summaries.
+      let summary = '';
+      const bodyLines = [];
+      for (const l of inner) {
+        if (!summary && l.trim().startsWith('<summary')) summary = l.trim();
+        else bodyLines.push(l);
+      }
+      html += openTag + summary
+        + '<div class="panel-body">' + renderMarkdown(bodyLines.join('\n')) + '</div>'
+        + '</details>';
+      continue;
+    }
+
     // List item (supports nested indentation)
     if (line.match(/^\s*[-*]\s/)) {
       if (!inList) { inList = true; listDepth = 0; html += '<ul>'; }

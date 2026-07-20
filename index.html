@@ -552,6 +552,32 @@
     margin: 6px 0;
     color: #6e7681;
   }
+  /* Collapsible panel (cpanel) — foldable aside. See design/mdv.md s9.1.
+     Inner content (p, ul, code, strong, table, links, math) inherits the
+     #ccmd-body rules above, so only the shell and summary are styled here. */
+  #ccmd-body .panel {
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    background: #161b22;
+    margin: 10px 0;
+    overflow: hidden;
+  }
+  #ccmd-body .panel > summary {
+    cursor: pointer;
+    padding: 9px 12px;
+    color: #c9d1d9;
+    list-style: none;
+    user-select: none;
+  }
+  #ccmd-body .panel > summary::-webkit-details-marker { display: none; }
+  #ccmd-body .panel > summary::before { content: "\25B8\00a0\00a0"; color: #58a6ff; font-size: 0.8em; }
+  #ccmd-body .panel[open] > summary::before { content: "\25BE\00a0\00a0"; }
+  #ccmd-body .panel[open] > summary { border-bottom: 1px solid #30363d; }
+  #ccmd-body .panel > summary:hover { color: #58a6ff; }
+  #ccmd-body .panel > summary strong { color: #e6edf3; }
+  #ccmd-body .panel-body { padding: 10px 12px 4px; }
+  #ccmd-body .panel-body > :first-child { margin-top: 0; }
+  #ccmd-body .panel-body > :last-child { margin-bottom: 0; }
   #ccmd-empty { color: #484f58; font-style: italic; }
   #ccmd-editor {
     flex: 1;
